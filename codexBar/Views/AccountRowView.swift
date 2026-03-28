@@ -160,11 +160,20 @@ struct AccountRowView: View {
                 }
             }
 
-            // Reset countdown (only when near limit or limited)
-            if !account.isBanned && account.primaryUsedPercent >= 70 && !account.primaryResetDescription.isEmpty {
-                Text(account.primaryResetDescription)
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
+            // Reset countdown
+            if !account.isBanned {
+                HStack(spacing: 8) {
+                    if account.primaryUsedPercent >= 70, !account.primaryResetDescription.isEmpty {
+                        Text("5h: " + account.primaryResetDescription)
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                    if account.secondaryUsedPercent >= 70, !account.secondaryResetDescription.isEmpty {
+                        Text("7d: " + account.secondaryResetDescription)
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
         }
         .padding(.vertical, 5)
