@@ -26,6 +26,7 @@ struct LocalCostSummaryService {
     ]
 
     func load(now: Date = Date()) -> LocalCostSummary {
+        let snapshot = SessionLogStore.shared.snapshot()
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: now)
         let last30Start = calendar.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
@@ -38,19 +39,18 @@ struct LocalCostSummaryService {
         var lifetimeTokens = 0
         var daily: [Date: (cost: Double, tokens: Int)] = [:]
 
-        for fileURL in self.sessionFiles() {
-            guard let record = self.parse(fileURL: fileURL) else { continue }
+        for record in snapshot.sessions {
             let cost = self.costUSD(model: record.model, usage: record.usage)
             guard let cost else { continue }
 
             let totalTokens = record.usage.inputTokens + record.usage.outputTokens
-            let day = calendar.startOfDay(for: record.date)
+            let day = calendar.startOfDay(for: record.startedAt)
 
-            if record.date >= last30Start {
+            if record.startedAt >= last30Start {
                 last30 += cost
                 last30Tokens += totalTokens
             }
-            if record.date >= todayStart {
+            if record.startedAt >= todayStart {
                 today += cost
                 todayTokens += totalTokens
             }
@@ -83,88 +83,12 @@ struct LocalCostSummaryService {
         )
     }
 
-    private func sessionFiles() -> [URL] {
-        let fileManager = FileManager.default
-        let directories = [
-            CodexPaths.codexRoot.appendingPathComponent("sessions", isDirectory: true),
-            CodexPaths.codexRoot.appendingPathComponent("archived_sessions", isDirectory: true),
-        ]
-        var files: [URL] = []
-        for directory in directories where fileManager.fileExists(atPath: directory.path) {
-            let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: nil)
-            while let url = enumerator?.nextObject() as? URL {
-                if url.pathExtension == "jsonl" {
-                    files.append(url)
-                }
-            }
-        }
-        return files
-    }
-
-    private func parse(fileURL: URL) -> (date: Date, model: String, usage: Usage)? {
-        guard let handle = try? FileHandle(forReadingFrom: fileURL),
-              let data = try? handle.readToEnd(),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-
-        defer { try? handle.close() }
-
-        var sessionDate: Date?
-        var model: String?
-        var latestUsage: Usage?
-
-        for line in text.split(separator: "\n") {
-            guard let jsonData = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                  let type = object["type"] as? String,
-                  let payload = object["payload"] as? [String: Any] else { continue }
-
-            switch type {
-            case "session_meta":
-                if let timestamp = payload["timestamp"] as? String {
-                    sessionDate = ISO8601Parsing.parse(timestamp)
-                }
-            case "turn_context":
-                if let currentModel = payload["model"] as? String {
-                    model = self.normalizeModel(currentModel)
-                }
-            case "event_msg":
-                guard let payloadType = payload["type"] as? String, payloadType == "token_count",
-                      let info = payload["info"] as? [String: Any],
-                      let total = info["total_token_usage"] as? [String: Any] else { continue }
-                latestUsage = Usage(
-                    inputTokens: total["input_tokens"] as? Int ?? 0,
-                    cachedInputTokens: total["cached_input_tokens"] as? Int ?? 0,
-                    outputTokens: total["output_tokens"] as? Int ?? 0
-                )
-            default:
-                continue
-            }
-        }
-
-        guard let date = sessionDate, let resolvedModel = model, let usage = latestUsage else { return nil }
-        return (date, resolvedModel, usage)
-    }
-
-    private func normalizeModel(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("openai/") {
-            return String(trimmed.dropFirst("openai/".count))
-        }
-        return trimmed
-    }
-
-    private func costUSD(model: String, usage: Usage) -> Double? {
+    private func costUSD(model: String, usage: SessionLogStore.Usage) -> Double? {
         guard let pricing = self.pricingByModel[model] else { return nil }
         let cached = min(max(0, usage.cachedInputTokens), max(0, usage.inputTokens))
         let nonCached = max(0, usage.inputTokens - cached)
         return Double(nonCached) * pricing.input +
             Double(cached) * (pricing.cachedInput ?? pricing.input) +
             Double(usage.outputTokens) * pricing.output
-    }
-
-    private struct Usage {
-        let inputTokens: Int
-        let cachedInputTokens: Int
-        let outputTokens: Int
     }
 }

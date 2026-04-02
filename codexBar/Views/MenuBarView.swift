@@ -102,8 +102,10 @@ struct MenuBarView: View {
             Task {
                 if !menuVisible { await refresh() }
                 store.markActiveAccount()
-                store.refreshLocalCostSummary()
-                store.refreshBillingHistory()
+                if menuVisible {
+                    store.refreshLocalCostSummary()
+                    store.refreshBillingHistory()
+                }
                 autoSwitchIfNeeded()
             }
         }

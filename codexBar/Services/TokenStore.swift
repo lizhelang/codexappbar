@@ -22,8 +22,6 @@ final class TokenStore: ObservableObject {
         }
 
         self.publishState()
-        self.refreshLocalCostSummary()
-        self.refreshBillingHistory()
         self.seedSwitchJournalIfNeeded()
         try? self.syncService.synchronize(config: self.config)
     }
