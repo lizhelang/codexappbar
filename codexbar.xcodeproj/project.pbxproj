@@ -8,6 +8,8 @@
 
 /* Begin PBXFileReference section */
 		C0C16B462F7423BE00A2A16F /* codexbar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = codexbar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0C16B6A2F7428A100A2A16F /* codexbarctl */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = codexbarctl; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0C16B6B2F7428A100A2A16F /* codexbarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = codexbarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -18,6 +20,31 @@
 			);
 			target = C0C16B452F7423BE00A2A16F /* codexBar */;
 		};
+		C0C16B6C2F7428A100A2A16F /* Exceptions for "codexBar" folder in "codexbarctl" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				ContentView.swift,
+				codexBarApp.swift,
+			);
+			target = C0C16B772F7428A100A2A16F /* codexbarctl */;
+		};
+		C0C16B6D2F7428A100A2A16F /* Exceptions for "codexBar" folder in "codexbarTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				ContentView.swift,
+				codexBarApp.swift,
+			);
+			target = C0C16B782F7428A100A2A16F /* codexbarTests */;
+		};
+		C0C16B702F7428A100A2A16F /* Exceptions for "codexBarCLI" folder in "codexbarTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				CodexBarCLIEntry.swift,
+			);
+			target = C0C16B782F7428A100A2A16F /* codexbarTests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -25,14 +52,43 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				C0C16B682F74282500A2A16F /* Exceptions for "codexBar" folder in "codexBar" target */,
+				C0C16B6C2F7428A100A2A16F /* Exceptions for "codexBar" folder in "codexbarctl" target */,
+				C0C16B6D2F7428A100A2A16F /* Exceptions for "codexBar" folder in "codexbarTests" target */,
 			);
 			path = codexBar;
+			sourceTree = "<group>";
+		};
+		C0C16B6E2F7428A100A2A16F /* codexBarCLI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0C16B702F7428A100A2A16F /* Exceptions for "codexBarCLI" folder in "codexbarTests" target */,
+			);
+			path = codexBarCLI;
+			sourceTree = "<group>";
+		};
+		C0C16B6F2F7428A100A2A16F /* codexBarTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = codexBarTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C0C16B432F7423BE00A2A16F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0C16B722F7428A100A2A16F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0C16B742F7428A100A2A16F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +102,8 @@
 			isa = PBXGroup;
 			children = (
 				C0C16B482F7423BE00A2A16F /* codexBar */,
+				C0C16B6E2F7428A100A2A16F /* codexBarCLI */,
+				C0C16B6F2F7428A100A2A16F /* codexBarTests */,
 				C0C16B472F7423BE00A2A16F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +112,8 @@
 			isa = PBXGroup;
 			children = (
 				C0C16B462F7423BE00A2A16F /* codexbar.app */,
+				C0C16B6A2F7428A100A2A16F /* codexbarctl */,
+				C0C16B6B2F7428A100A2A16F /* codexbarTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -68,10 +128,12 @@
 				C0C16B422F7423BE00A2A16F /* Sources */,
 				C0C16B432F7423BE00A2A16F /* Frameworks */,
 				C0C16B442F7423BE00A2A16F /* Resources */,
+				C0C16B762F7428A100A2A16F /* Bundle codexbarctl */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C0C16B7A2F7428A100A2A16F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C0C16B482F7423BE00A2A16F /* codexBar */,
@@ -82,6 +144,52 @@
 			productName = codexbar;
 			productReference = C0C16B462F7423BE00A2A16F /* codexbar.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C0C16B772F7428A100A2A16F /* codexbarctl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0C16B802F7428A100A2A16F /* Build configuration list for PBXNativeTarget "codexbarctl" */;
+			buildPhases = (
+				C0C16B712F7428A100A2A16F /* Sources */,
+				C0C16B722F7428A100A2A16F /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0C16B482F7423BE00A2A16F /* codexBar */,
+				C0C16B6E2F7428A100A2A16F /* codexBarCLI */,
+			);
+			name = codexbarctl;
+			packageProductDependencies = (
+			);
+			productName = codexbarctl;
+			productReference = C0C16B6A2F7428A100A2A16F /* codexbarctl */;
+			productType = "com.apple.product-type.tool";
+		};
+		C0C16B782F7428A100A2A16F /* codexbarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0C16B832F7428A100A2A16F /* Build configuration list for PBXNativeTarget "codexbarTests" */;
+			buildPhases = (
+				C0C16B732F7428A100A2A16F /* Sources */,
+				C0C16B742F7428A100A2A16F /* Frameworks */,
+				C0C16B752F7428A100A2A16F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0C16B482F7423BE00A2A16F /* codexBar */,
+				C0C16B6E2F7428A100A2A16F /* codexBarCLI */,
+				C0C16B6F2F7428A100A2A16F /* codexBarTests */,
+			);
+			name = codexbarTests;
+			packageProductDependencies = (
+			);
+			productName = codexbarTests;
+			productReference = C0C16B6B2F7428A100A2A16F /* codexbarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -94,6 +202,12 @@
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					C0C16B452F7423BE00A2A16F = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					C0C16B772F7428A100A2A16F = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					C0C16B782F7428A100A2A16F = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -113,6 +227,8 @@
 			projectRoot = "";
 			targets = (
 				C0C16B452F7423BE00A2A16F /* codexbar */,
+				C0C16B772F7428A100A2A16F /* codexbarctl */,
+				C0C16B782F7428A100A2A16F /* codexbarTests */,
 			);
 		};
 /* End PBXProject section */
@@ -125,7 +241,37 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0C16B752F7428A100A2A16F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C0C16B762F7428A100A2A16F /* Bundle codexbarctl */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/codexbarctl",
+			);
+			name = "Bundle codexbarctl";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/MacOS/codexbarctl",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nCLI_SOURCE=\"${BUILT_PRODUCTS_DIR}/codexbarctl\"\nCLI_DEST=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Contents/MacOS/codexbarctl\"\nif [ ! -f \"$CLI_SOURCE\" ]; then\n  echo \"error: Missing codexbarctl binary at $CLI_SOURCE\" >&2\n  exit 1\nfi\n/bin/cp \"$CLI_SOURCE\" \"$CLI_DEST\"\n/bin/chmod 755 \"$CLI_DEST\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C0C16B422F7423BE00A2A16F /* Sources */ = {
@@ -135,7 +281,40 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0C16B712F7428A100A2A16F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0C16B732F7428A100A2A16F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		C0C16B792F7428A100A2A16F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0C16B3E2F7423BE00A2A16F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0C16B772F7428A100A2A16F;
+			remoteInfo = codexbarctl;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		C0C16B7A2F7428A100A2A16F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = codexbarctl;
+			target = C0C16B772F7428A100A2A16F /* codexbarctl */;
+			targetProxy = C0C16B792F7428A100A2A16F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C0C16B4F2F7423BF00A2A16F /* Debug */ = {
@@ -336,6 +515,68 @@
 			};
 			name = Release;
 		};
+		C0C16B7C2F7428A100A2A16F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_NAME = codexbarctl;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C0C16B7D2F7428A100A2A16F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_NAME = codexbarctl;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C0C16B7E2F7428A100A2A16F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_BUNDLE_IDENTIFIER = xmasdong.codexbar.tests;
+				PRODUCT_NAME = codexbarTests;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C0C16B7F2F7428A100A2A16F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRODUCT_BUNDLE_IDENTIFIER = xmasdong.codexbar.tests;
+				PRODUCT_NAME = codexbarTests;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -353,6 +594,24 @@
 			buildConfigurations = (
 				C0C16B522F7423BF00A2A16F /* Debug */,
 				C0C16B532F7423BF00A2A16F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0C16B802F7428A100A2A16F /* Build configuration list for PBXNativeTarget "codexbarctl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0C16B7C2F7428A100A2A16F /* Debug */,
+				C0C16B7D2F7428A100A2A16F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0C16B832F7428A100A2A16F /* Build configuration list for PBXNativeTarget "codexbarTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0C16B7E2F7428A100A2A16F /* Debug */,
+				C0C16B7F2F7428A100A2A16F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

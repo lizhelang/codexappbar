@@ -618,11 +618,12 @@ struct MenuBarView: View {
     private func startOAuthLogin() {
         oauth.startOAuth { result in
             switch result {
-            case .success(let tokens):
-                let account = AccountBuilder.build(from: tokens)
-                store.addOrUpdate(account)
-                Task { await WhamService.shared.refreshOne(account: account, store: store) }
-                showSuccess = "Updated Codex configuration. Changes apply to new sessions."
+            case .success(let completion):
+                store.load()
+                Task { await WhamService.shared.refreshOne(account: completion.account, store: store) }
+                showSuccess = completion.active
+                    ? "Updated Codex configuration. Changes apply to new sessions."
+                    : "Saved OpenAI account."
                 DetachedWindowPresenter.shared.close(id: "oauth-login")
             case .failure(let error):
                 showError = error.localizedDescription
@@ -773,16 +774,12 @@ struct MenuBarView: View {
     private func reauthAccount(_ account: TokenAccount) {
         oauth.startOAuth { result in
             switch result {
-            case .success(let tokens):
-                var updated = AccountBuilder.build(from: tokens)
-                if updated.accountId == account.accountId {
-                    updated.isActive = account.isActive
-                    updated.tokenExpired = false
-                    updated.isSuspended = false
-                }
-                store.addOrUpdate(updated)
-                Task { await WhamService.shared.refreshOne(account: updated, store: store) }
-                showSuccess = "Updated Codex configuration. Changes apply to new sessions."
+            case .success(let completion):
+                store.load()
+                Task { await WhamService.shared.refreshOne(account: completion.account, store: store) }
+                showSuccess = completion.active
+                    ? "Updated Codex configuration. Changes apply to new sessions."
+                    : "Saved OpenAI account."
             case .failure(let error):
                 showError = error.localizedDescription
             }

@@ -87,6 +87,67 @@ OpenAI login currently uses a browser-based authorization flow plus manual callb
 
 This avoids depending entirely on localhost callback listeners, which can be unreliable in practice.
 
+## Command-Line OAuth
+
+You can now complete the OpenAI OAuth import flow entirely from the command line without opening the menu bar UI.
+
+Default installed binary path:
+
+- `/Applications/codexbar.app/Contents/MacOS/codexbarctl`
+
+If you add it to `PATH`, you can invoke it as `codexbarctl`.
+
+### Interactive command
+
+```sh
+codexbarctl openai login
+```
+
+This command:
+
+1. Prints the authorization URL
+2. Tries to open the browser by default
+3. Waits for you to paste the full callback URL or the raw `code`
+4. Imports the account
+
+To skip opening the browser automatically:
+
+```sh
+codexbarctl openai login --no-open-browser
+```
+
+### Two-step flow for AI / scripts
+
+Start the flow:
+
+```sh
+codexbarctl openai login start --json
+```
+
+Then complete it with either a callback URL or a raw code:
+
+```sh
+codexbarctl openai login complete --flow-id <id> --callback-url '<callback-url>' --json
+```
+
+Or:
+
+```sh
+codexbarctl openai login complete --flow-id <id> --code <code> --json
+```
+
+### Listing and activating accounts
+
+```sh
+codexbarctl accounts list --json
+codexbarctl accounts activate --account-id <id> --json
+```
+
+`accounts activate` synchronizes the selected OpenAI OAuth account into:
+
+- `~/.codex/auth.json`
+- `~/.codex/config.toml`
+
 ## Cost Notes
 
 The displayed values are **local usage estimates**, not official billing numbers.

@@ -2,6 +2,10 @@ import Foundation
 
 enum CodexPaths {
     static var realHome: URL {
+        if let override = ProcessInfo.processInfo.environment["CODEXBAR_HOME"],
+           override.isEmpty == false {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
         if let pw = getpwuid(getuid()), let pwDir = pw.pointee.pw_dir {
             return URL(fileURLWithPath: String(cString: pwDir), isDirectory: true)
         }
@@ -20,6 +24,7 @@ enum CodexPaths {
     static var tokenPoolURL: URL { self.codexRoot.appendingPathComponent("token_pool.json") }
     static var configTomlURL: URL { self.codexRoot.appendingPathComponent("config.toml") }
     static var providerSecretsURL: URL { self.codexRoot.appendingPathComponent("provider-secrets.env") }
+    static var oauthFlowsDirectoryURL: URL { self.codexBarRoot.appendingPathComponent("oauth-flows", isDirectory: true) }
 
     static var barConfigURL: URL { self.codexBarRoot.appendingPathComponent("config.json") }
     static var costCacheURL: URL { self.codexBarRoot.appendingPathComponent("cost-cache.json") }
@@ -31,6 +36,7 @@ enum CodexPaths {
     static func ensureDirectories() throws {
         try FileManager.default.createDirectory(at: self.codexRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: self.codexBarRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: self.oauthFlowsDirectoryURL, withIntermediateDirectories: true)
     }
 
     static func writeSecureFile(_ data: Data, to url: URL) throws {
@@ -60,4 +66,3 @@ enum CodexPaths {
         ], ofItemAtPath: url.path)
     }
 }
-

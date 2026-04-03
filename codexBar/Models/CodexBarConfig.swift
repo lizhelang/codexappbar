@@ -232,3 +232,90 @@ struct CodexBarConfig: Codable {
     }
 }
 
+extension CodexBarConfig {
+    mutating func upsertOAuthAccount(_ account: TokenAccount, activate: Bool) -> (storedAccount: CodexBarProviderAccount, syncCodex: Bool) {
+        var provider = self.ensureOAuthProvider()
+        let storedAccount: CodexBarProviderAccount
+
+        if let index = provider.accounts.firstIndex(where: { $0.openAIAccountId == account.accountId }) {
+            let existing = provider.accounts[index]
+            var updated = CodexBarProviderAccount.fromTokenAccount(account, existingID: existing.id)
+            updated.addedAt = existing.addedAt ?? Date()
+            updated.label = existing.label
+            provider.accounts[index] = updated
+            storedAccount = updated
+        } else {
+            let created = CodexBarProviderAccount.fromTokenAccount(account, existingID: account.accountId)
+            provider.accounts.append(created)
+            storedAccount = created
+        }
+
+        if provider.activeAccountId == nil {
+            provider.activeAccountId = storedAccount.id
+        }
+
+        if activate {
+            provider.activeAccountId = storedAccount.id
+            self.active.providerId = provider.id
+            self.active.accountId = storedAccount.id
+        }
+
+        self.upsertProvider(provider)
+
+        let syncCodex = activate || (
+            self.active.providerId == provider.id &&
+            self.active.accountId == storedAccount.id
+        )
+        return (storedAccount, syncCodex)
+    }
+
+    mutating func activateOAuthAccount(accountID: String) throws -> CodexBarProviderAccount {
+        guard var provider = self.oauthProvider() else {
+            throw TokenStoreError.providerNotFound
+        }
+        guard let stored = provider.accounts.first(where: { $0.id == accountID || $0.openAIAccountId == accountID }) else {
+            throw TokenStoreError.accountNotFound
+        }
+
+        provider.activeAccountId = stored.id
+        self.upsertProvider(provider)
+        self.active.providerId = provider.id
+        self.active.accountId = stored.id
+        return stored
+    }
+
+    func oauthTokenAccounts() -> [TokenAccount] {
+        guard let provider = self.oauthProvider() else { return [] }
+        let isOAuthActive = self.active.providerId == provider.id
+
+        return provider.accounts.compactMap { stored in
+            stored.asTokenAccount(isActive: isOAuthActive && self.active.accountId == stored.id)
+        }.sorted { lhs, rhs in
+            if lhs.isActive != rhs.isActive { return lhs.isActive }
+            return lhs.email < rhs.email
+        }
+    }
+
+    private mutating func ensureOAuthProvider() -> CodexBarProvider {
+        if let provider = self.oauthProvider() {
+            return provider
+        }
+        let provider = CodexBarProvider(
+            id: "openai-oauth",
+            kind: .openAIOAuth,
+            label: "OpenAI",
+            enabled: true,
+            baseURL: nil
+        )
+        self.providers.append(provider)
+        return provider
+    }
+
+    private mutating func upsertProvider(_ provider: CodexBarProvider) {
+        if let index = self.providers.firstIndex(where: { $0.id == provider.id }) {
+            self.providers[index] = provider
+        } else {
+            self.providers.append(provider)
+        }
+    }
+}

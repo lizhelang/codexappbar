@@ -10,6 +10,7 @@ final class TokenStore: ObservableObject {
 
     private let configStore = CodexBarConfigStore()
     private let syncService = CodexSyncService()
+    private let switchJournalStore = SwitchJournalStore()
     private let costSummaryService = LocalCostSummaryService()
     private let refreshStateQueue = DispatchQueue(label: "lzl.codexbar.refresh-state")
     private var isRefreshingLocalCostSummary = false
@@ -52,25 +53,8 @@ final class TokenStore: ObservableObject {
     }
 
     func addOrUpdate(_ account: TokenAccount) {
-        var provider = self.ensureOAuthProvider()
-        if let index = provider.accounts.firstIndex(where: { $0.openAIAccountId == account.accountId }) {
-            let existing = provider.accounts[index]
-            var updated = CodexBarProviderAccount.fromTokenAccount(account, existingID: existing.id)
-            updated.addedAt = existing.addedAt ?? Date()
-            updated.label = existing.label
-            provider.accounts[index] = updated
-        } else {
-            provider.accounts.append(CodexBarProviderAccount.fromTokenAccount(account, existingID: account.accountId))
-            if provider.activeAccountId == nil {
-                provider.activeAccountId = account.accountId
-            }
-        }
-
-        self.upsertProvider(provider)
-
-        let shouldSync = self.config.active.providerId == provider.id &&
-            provider.accounts.contains(where: { $0.id == self.config.active.accountId })
-        self.persistIgnoringErrors(syncCodex: shouldSync)
+        let result = self.config.upsertOAuthAccount(account, activate: false)
+        self.persistIgnoringErrors(syncCodex: result.syncCodex)
     }
 
     func remove(_ account: TokenAccount) {
@@ -98,16 +82,7 @@ final class TokenStore: ObservableObject {
     }
 
     func activate(_ account: TokenAccount) throws {
-        guard var provider = self.oauthProvider(),
-              let stored = provider.accounts.first(where: { $0.openAIAccountId == account.accountId }) else {
-            throw TokenStoreError.accountNotFound
-        }
-
-        provider.activeAccountId = stored.id
-        self.upsertProvider(provider)
-        self.config.active.providerId = provider.id
-        self.config.active.accountId = stored.id
-
+        _ = try self.config.activateOAuthAccount(accountID: account.accountId)
         try self.persist(syncCodex: true)
         try self.appendSwitchJournal()
     }
@@ -282,18 +257,7 @@ final class TokenStore: ObservableObject {
     }
 
     private func publishState() {
-        guard let provider = self.oauthProvider() else {
-            self.accounts = []
-            return
-        }
-
-        let isOAuthActive = self.config.active.providerId == provider.id
-        self.accounts = provider.accounts.compactMap { stored in
-            stored.asTokenAccount(isActive: isOAuthActive && self.config.active.accountId == stored.id)
-        }.sorted { lhs, rhs in
-            if lhs.isActive != rhs.isActive { return lhs.isActive }
-            return lhs.email < rhs.email
-        }
+        self.accounts = self.config.oauthTokenAccounts()
     }
 
     func refreshLocalCostSummary() {
@@ -318,25 +282,10 @@ final class TokenStore: ObservableObject {
     }
 
     private func appendSwitchJournal() throws {
-        let entry: [String: Any] = [
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
-            "providerId": self.config.active.providerId as Any,
-            "accountId": self.config.active.accountId as Any,
-            "type": "activation",
-        ]
-        let data = try JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys])
-        let line = (String(data: data, encoding: .utf8) ?? "{}") + "\n"
-
-        let fileManager = FileManager.default
-        try CodexPaths.ensureDirectories()
-        if fileManager.fileExists(atPath: CodexPaths.switchJournalURL.path) == false {
-            try CodexPaths.writeSecureFile(Data(line.utf8), to: CodexPaths.switchJournalURL)
-            return
-        }
-        let handle = try FileHandle(forWritingTo: CodexPaths.switchJournalURL)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data(line.utf8))
+        try self.switchJournalStore.appendActivation(
+            providerID: self.config.active.providerId,
+            accountID: self.config.active.accountId
+        )
     }
 
     private func seedSwitchJournalIfNeeded() {
