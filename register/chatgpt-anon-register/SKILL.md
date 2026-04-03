@@ -72,6 +72,12 @@ BIRTH_DAY="08" \
 - pull the newest OpenAI verification code from `Mail.app`
 - stop once the account reaches the post-signup onboarding state
 
+4. To import the new account into local Codexbar without switching the current active account:
+
+```bash
+./register/scripts/create_and_import_openai_account.sh
+```
+
 ## Scripts
 
 - `scripts/create_hide_my_email.sh`

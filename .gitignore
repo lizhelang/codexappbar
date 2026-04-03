@@ -39,6 +39,10 @@ fastlane/test_output
 .Spotlight-V100
 .Trashes
 
+# Local agent state
+.omx/
+.ufoo/
+
 # Sensitive
 *.p12
 *.mobileprovision

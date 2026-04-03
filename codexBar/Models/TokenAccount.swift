@@ -119,6 +119,16 @@ struct TokenAccount: Codable, Identifiable {
         if hours > 0 { return L.resetInHr(hours, minutes) }
         return L.resetInMin(minutes)
     }
+
+    func usageSnapshotAge(now: Date = Date()) -> TimeInterval? {
+        guard let lastChecked else { return nil }
+        return max(0, now.timeIntervalSince(lastChecked))
+    }
+
+    func isUsageSnapshotStale(maxAge: TimeInterval, now: Date = Date()) -> Bool {
+        guard let age = self.usageSnapshotAge(now: now) else { return true }
+        return age >= maxAge
+    }
 }
 
 enum UsageStatus {

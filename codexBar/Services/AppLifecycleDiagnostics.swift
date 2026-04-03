@@ -132,6 +132,9 @@ final class AppLifecycleDiagnostics {
 final class AppLifecycleObserver: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppLifecycleDiagnostics.shared.beginSession()
+        Task { @MainActor in
+            OpenAIUsagePollingService.shared.start()
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -143,6 +146,9 @@ final class AppLifecycleObserver: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Task { @MainActor in
+            OpenAIUsagePollingService.shared.stop()
+        }
         AppLifecycleDiagnostics.shared.markTermination(reason: "applicationWillTerminate")
     }
 }

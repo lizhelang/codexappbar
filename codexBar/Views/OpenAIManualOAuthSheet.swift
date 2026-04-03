@@ -4,12 +4,11 @@ struct OpenAIManualOAuthSheet: View {
     let authURL: String
     let isAuthenticating: Bool
     let errorMessage: String?
+    @Binding var callbackInput: String
     let onComplete: (String) -> Void
     let onOpenBrowser: () -> Void
     let onCopyLink: () -> Void
     let onCancel: () -> Void
-
-    @State private var callbackInput = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -20,7 +19,7 @@ struct OpenAIManualOAuthSheet: View {
                 .font(.system(size: 12))
             Text("2. Finish authorization.")
                 .font(.system(size: 12))
-            Text("3. When the browser ends on `http://localhost:1455/auth/callback?...`, paste the full URL here. You can also paste just the `code` value.")
+            Text("3. Codexbar will auto-capture `http://localhost:1455/auth/callback?...` while this window is open. If automatic capture fails, paste the full URL here. You can also paste just the `code` value.")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 

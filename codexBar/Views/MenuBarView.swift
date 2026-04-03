@@ -45,6 +45,7 @@ struct MenuBarView: View {
     @EnvironmentObject var oauth: OAuthManager
 
     private let costPanelID = "cost-details-hover-panel"
+    private let usageRefreshInterval = OpenAIUsagePollingService.defaultRefreshInterval
 
     @State private var isRefreshing = false
     @State private var showError: String?
@@ -595,6 +596,9 @@ struct MenuBarView: View {
         do {
             try store.activate(account)
             showSuccess = "Updated Codex configuration. Changes apply to new sessions."
+            Task { @MainActor in
+                OpenAIUsagePollingService.shared.refreshNow()
+            }
         } catch {
             showError = error.localizedDescription
         }
@@ -727,10 +731,15 @@ struct MenuBarView: View {
         guard didTriggerOpenRefresh == false else { return }
         didTriggerOpenRefresh = true
         guard isRefreshing == false else { return }
-        Task { await refresh() }
+        Task { await refresh(force: false) }
     }
 
-    private func refresh() async {
+    private func refresh(force: Bool = true) async {
+        guard force || store.hasStaleOAuthUsageSnapshot(maxAge: usageRefreshInterval) else {
+            store.refreshLocalCostSummary()
+            return
+        }
+
         isRefreshing = true
         await WhamService.shared.refreshAll(store: store)
         store.refreshLocalCostSummary()

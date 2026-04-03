@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 struct CostSummaryRowView: View {
@@ -50,6 +49,57 @@ struct CostDetailsPanelView: View {
         let totalTokens: Int
     }
 
+    private struct MiniBarChart: View {
+        let points: [Point]
+        @Binding var selectedID: String?
+
+        private let minBarHeight: CGFloat = 6
+        private let barSpacing: CGFloat = 4
+
+        var body: some View {
+            GeometryReader { geometry in
+                let maxCost = max(points.map(\.costUSD).max() ?? 0, 0.01)
+                let slotWidth = geometry.size.width / CGFloat(Swift.max(points.count, 1))
+
+                HStack(alignment: .bottom, spacing: barSpacing) {
+                    ForEach(points) { point in
+                        let isSelected = selectedID == point.id
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(isSelected ? Color.accentColor : Color.accentColor.opacity(0.68))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: self.barHeight(for: point, totalHeight: geometry.size.height, maxCost: maxCost))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        guard points.isEmpty == false,
+                              location.x >= 0,
+                              location.x <= geometry.size.width else {
+                            selectedID = nil
+                            return
+                        }
+
+                        let index = min(max(Int(location.x / max(slotWidth, 1)), 0), points.count - 1)
+                        selectedID = points[index].id
+                    case .ended:
+                        selectedID = nil
+                    }
+                }
+            }
+            .frame(height: 128)
+        }
+
+        private func barHeight(for point: Point, totalHeight: CGFloat, maxCost: Double) -> CGFloat {
+            guard totalHeight > 0 else { return minBarHeight }
+            let usableHeight = max(totalHeight - 4, minBarHeight)
+            let ratio = point.costUSD > 0 ? CGFloat(point.costUSD / maxCost) : 0
+            return max(minBarHeight, usableHeight * ratio)
+        }
+    }
+
     let summary: LocalCostSummary
     let currency: (Double) -> String
     let compactTokens: (Int) -> String
@@ -83,52 +133,21 @@ struct CostDetailsPanelView: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             } else {
-                Chart {
-                    ForEach(points) { point in
-                        BarMark(
-                            x: .value("Day", point.date, unit: .day),
-                            y: .value("Cost", point.costUSD)
-                        )
-                        .foregroundStyle(Color.accentColor)
-                    }
-                }
-                .chartYAxis(.hidden)
-                .chartXAxis {
-                    AxisMarks(values: axisDates()) { _ in
-                        AxisGridLine().foregroundStyle(Color.clear)
-                        AxisTick().foregroundStyle(Color.clear)
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                            .font(.caption2)
-                            .foregroundStyle(Color.secondary)
-                    }
-                }
-                .chartLegend(.hidden)
-                .frame(height: 128)
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .onContinuousHover { phase in
-                                switch phase {
-                                case .active(let location):
-                                    guard let plotFrame = proxy.plotFrame else { return }
-                                    let plotRect = geo[plotFrame]
-                                    guard plotRect.contains(location) else {
-                                        selectedID = nil
-                                        return
-                                    }
+                MiniBarChart(points: points, selectedID: $selectedID)
 
-                                    let localX = location.x - plotRect.origin.x
-                                    if let date: Date = proxy.value(atX: localX) {
-                                        selectedID = nearestPoint(to: date)?.id
-                                    }
-                                case .ended:
-                                    selectedID = nil
-                                }
-                            }
+                HStack {
+                    if let first = points.first {
+                        Text(shortDay(first.date))
+                    }
+
+                    Spacer()
+
+                    if let last = points.last {
+                        Text(shortDay(last.date))
                     }
                 }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(primaryDetailText())
@@ -160,16 +179,6 @@ struct CostDetailsPanelView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         )
-    }
-
-    private func axisDates() -> [Date] {
-        guard let first = points.first?.date, let last = points.last?.date else { return [] }
-        if Calendar.current.isDate(first, inSameDayAs: last) { return [first] }
-        return [first, last]
-    }
-
-    private func nearestPoint(to date: Date) -> Point? {
-        points.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
     }
 
     private func metricRow(title: String, cost: Double, tokens: Int) -> some View {

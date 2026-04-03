@@ -9,6 +9,7 @@ final class OAuthManager: ObservableObject {
     @Published var isAuthenticating = false
     @Published var errorMessage: String?
     @Published var pendingAuthURL: String?
+    @Published var callbackInput = ""
     @Published private(set) var activeFlowID: String?
 
     private let service: OpenAIOAuthFlowService
@@ -31,6 +32,7 @@ final class OAuthManager: ObservableObject {
             self.isAuthenticating = true
             self.errorMessage = nil
             self.pendingAuthURL = started.authURL
+            self.callbackInput = ""
             self.activeFlowID = started.flowID
             self.activateOnCompletion = activate
             self.completionHandler = completion
@@ -50,6 +52,7 @@ final class OAuthManager: ObservableObject {
         self.isAuthenticating = false
         self.errorMessage = nil
         self.pendingAuthURL = nil
+        self.callbackInput = ""
         self.activeFlowID = nil
         self.activateOnCompletion = false
         self.completionHandler = nil
@@ -61,6 +64,7 @@ final class OAuthManager: ObservableObject {
             self.reportRecoverable(OpenAIOAuthError.invalidCallback)
             return
         }
+        self.callbackInput = trimmed
         guard let activeFlowID else {
             self.reportRecoverable(OpenAIOAuthError.noPendingFlow)
             return
@@ -78,6 +82,7 @@ final class OAuthManager: ObservableObject {
                     self.isAuthenticating = false
                     self.errorMessage = nil
                     self.pendingAuthURL = nil
+                    self.callbackInput = ""
                     self.activeFlowID = nil
                     self.activateOnCompletion = false
                     self.completionHandler?(.success(result))
@@ -95,6 +100,7 @@ final class OAuthManager: ObservableObject {
         self.errorMessage = error.localizedDescription
         self.isAuthenticating = false
         self.pendingAuthURL = nil
+        self.callbackInput = ""
         self.activeFlowID = nil
         self.activateOnCompletion = false
         self.completionHandler?(.failure(error))

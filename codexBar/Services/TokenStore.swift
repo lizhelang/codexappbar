@@ -13,7 +13,9 @@ final class TokenStore: ObservableObject {
     private let switchJournalStore = SwitchJournalStore()
     private let costSummaryService = LocalCostSummaryService()
     private let refreshStateQueue = DispatchQueue(label: "lzl.codexbar.refresh-state")
+    private let usageRefreshStateQueue = DispatchQueue(label: "lzl.codexbar.usage-refresh-state")
     private var isRefreshingLocalCostSummary = false
+    private var refreshingUsageAccountIDs: Set<String> = []
 
     private init() {
         if let loaded = try? self.configStore.loadOrMigrate() {
@@ -209,6 +211,26 @@ final class TokenStore: ObservableObject {
 
     func markActiveAccount() {
         self.publishState()
+    }
+
+    func hasStaleOAuthUsageSnapshot(maxAge: TimeInterval, now: Date = Date()) -> Bool {
+        self.accounts.contains {
+            $0.isSuspended == false &&
+            $0.tokenExpired == false &&
+            $0.isUsageSnapshotStale(maxAge: maxAge, now: now)
+        }
+    }
+
+    func beginUsageRefresh(accountID: String) -> Bool {
+        self.usageRefreshStateQueue.sync {
+            self.refreshingUsageAccountIDs.insert(accountID).inserted
+        }
+    }
+
+    func endUsageRefresh(accountID: String) {
+        _ = self.usageRefreshStateQueue.sync {
+            self.refreshingUsageAccountIDs.remove(accountID)
+        }
     }
 
     // MARK: - Private

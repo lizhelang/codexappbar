@@ -14,7 +14,11 @@ private struct OpenAILoginWindowView: View {
         OpenAIManualOAuthSheet(
             authURL: oauth.pendingAuthURL ?? "",
             isAuthenticating: oauth.isAuthenticating,
-            errorMessage: oauth.errorMessage
+            errorMessage: oauth.errorMessage,
+            callbackInput: Binding(
+                get: { oauth.callbackInput },
+                set: { oauth.callbackInput = $0 }
+            )
         ) { input in
             oauth.completeOAuth(from: input)
         } onOpenBrowser: {
@@ -25,8 +29,7 @@ private struct OpenAILoginWindowView: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(authURL, forType: .string)
         } onCancel: {
-            oauth.cancel()
-            DetachedWindowPresenter.shared.close(id: OpenAILoginCoordinator.windowID)
+            OpenAILoginCoordinator.shared.cancel()
         }
     }
 }
@@ -39,12 +42,15 @@ final class OpenAILoginCoordinator {
     static let loginURLScheme = "com.codexbar.oauth"
     static let loginHost = "login"
 
+    private var callbackServer: LocalhostOAuthCallbackServer?
+
     private init() {}
 
     func start() {
         let oauth = OAuthManager.shared
 
-        oauth.startOAuth(openBrowser: true, activate: false) { result in
+        oauth.startOAuth(openBrowser: false, activate: false) { result in
+            self.stopCallbackServer()
             switch result {
             case .success(let completion):
                 let store = TokenStore.shared
@@ -70,7 +76,17 @@ final class OpenAILoginCoordinator {
             }
         }
 
+        self.startCallbackServer(for: oauth)
         self.openWindow()
+        if let authURL = oauth.pendingAuthURL, let url = URL(string: authURL) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func cancel() {
+        self.stopCallbackServer()
+        OAuthManager.shared.cancel()
+        DetachedWindowPresenter.shared.close(id: Self.windowID)
     }
 
     private func openWindow() {
@@ -81,6 +97,26 @@ final class OpenAILoginCoordinator {
         ) {
             OpenAILoginWindowView()
         }
+    }
+
+    private func startCallbackServer(for oauth: OAuthManager) {
+        self.stopCallbackServer()
+
+        let server = LocalhostOAuthCallbackServer { callbackURL in
+            oauth.completeOAuth(from: callbackURL)
+        }
+        do {
+            try server.start()
+            self.callbackServer = server
+        } catch {
+            NSLog("codexbar localhost OAuth callback listener unavailable: %@", error.localizedDescription)
+            self.callbackServer = nil
+        }
+    }
+
+    private func stopCallbackServer() {
+        self.callbackServer?.stop()
+        self.callbackServer = nil
     }
 }
 
