@@ -8,16 +8,33 @@ func attr<T>(_ element: AXUIElement, _ name: String) -> T? {
     return value as? T
 }
 
-func findAuthURL(in element: AXUIElement) -> String? {
-    if let value: String = attr(element, kAXValueAttribute),
-       value.hasPrefix("https://auth.openai.com/oauth/authorize?") {
-        return value
+let authPrefix = "https://auth.openai.com/oauth/authorize?"
+
+func isCompleteAuthURL(_ value: String) -> Bool {
+    guard value.hasPrefix(authPrefix) else { return false }
+    let requiredFragments = [
+        "response_type=code",
+        "client_id=",
+        "redirect_uri=http://localhost:1455/auth/callback",
+        "code_challenge=",
+        "state=",
+        "originator="
+    ]
+    return requiredFragments.allSatisfy { value.contains($0) }
+}
+
+func firstAuthURL(in element: AXUIElement) -> String? {
+    for key in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+        if let value: String = attr(element, key),
+           isCompleteAuthURL(value) {
+            return value
+        }
     }
 
     if let children: [AXUIElement] = attr(element, kAXChildrenAttribute) {
         for child in children {
-            if let result = findAuthURL(in: child) {
-                return result
+            if let found = firstAuthURL(in: child) {
+                return found
             }
         }
     }
@@ -33,10 +50,11 @@ while Date() < deadline {
     if let app = apps.first {
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         if let windows: [AXUIElement] = attr(appElement, kAXWindowsAttribute),
-           let window = windows.first(where: { (attr($0, kAXTitleAttribute) as String?) == "OpenAI OAuth" }),
-           let authURL = findAuthURL(in: window) {
-            print(authURL)
-            exit(0)
+           let window = windows.first(where: { (attr($0, kAXTitleAttribute) as String?) == "OpenAI OAuth" }) {
+            if let authURL = firstAuthURL(in: window) {
+                print(authURL)
+                exit(0)
+            }
         }
     }
 

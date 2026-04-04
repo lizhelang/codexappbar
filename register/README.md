@@ -60,6 +60,7 @@ Expected result:
 - a new OpenAI account is registered
 - the generated credentials are reused to import the account into Codexbar
 - the account is added to Codexbar without switching the active one
+- each top-level run appends `email,password,status` to `register/codex.csv`
 
 ## Notes
 

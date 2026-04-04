@@ -7,6 +7,7 @@
 - Confirm branch is `agentic-cli`.
 - Run stage 1 precheck for `playwright-cli`, `osascript`, `swift`, `Mail.app`, `System Events`, Codexbar app/CLI, and local account state.
 - Prefer `./register/scripts/create_and_import_openai_account.sh` as the default end-to-end path because it already chains Hide My Email creation, OpenAI signup, and Codexbar import.
+- Each top-level round now appends `email,password,status` into `register/codex.csv`.
 - If the end-to-end script fails, switch by stage instead of repeating the whole flow blindly:
   - Hide My Email: `./register/chatgpt-anon-register/scripts/create_hide_my_email.sh`
     - Current preferred implementation is the AX-first helper `register/chatgpt-anon-register/scripts/create_hide_my_email_ax.swift`
@@ -21,6 +22,15 @@
     - If the password page exposes `使用一次性验证码注册`, prefer that branch; otherwise fall back to password creation.
     - Treat the run as complete immediately after email verification succeeds and the flow leaves the verification page. Do not block on the later profile form unless a future task explicitly requires it.
   - Import: `OPENAI_EMAIL=... OPENAI_PASSWORD=... ./register/scripts/import_openai_account_to_codexbar.sh`
+    - Current import script now treats the Codexbar popup as the only default source of truth:
+      - first try `Copy Login Link` via `copy_codexbar_auth_url.swift`
+      - then fall back to AX extraction via `get_codexbar_auth_url.swift`
+    - Safari fallback is disabled by default and only enabled when `ALLOW_SAFARI_AUTH_URL_FALLBACK=1` is set explicitly.
+    - `get_codexbar_auth_url.swift` now walks the whole AX tree and returns the longest matching `https://auth.openai.com/oauth/authorize?...` string, which fixes earlier partial-URL extraction risk.
+    - Browser injection now uses `about:blank -> page.goto(authUrl)` and hard-fails unless the first main-frame navigation request exactly matches the copied OAuth URL.
+    - Do not switch to a generic OpenAI login page. The Codexbar receipt only comes back when the login flow starts from the Codexbar-provided OAuth URL.
+    - If the password page shows `使用一次性验证码登录`, prefer that branch.
+    - If the exact Codexbar OAuth flow eventually lands on `/add-phone`, treat it as an external block rather than a script bug.
 - Prefer Codexbar localhost callback capture. Manual callback entry is a last-resort fallback only if the listener is actually broken.
 - After every successful stage, immediately write the validated path back into this file.
 
@@ -57,6 +67,7 @@
 - The current AX helper for Hide My Email depends on the present button/window titles remaining compatible with `iCloud`, `隐藏邮件地址`, `创建新地址`, `继续`, and `完成`.
 - `playwright-cli` on this Mac rejects overly long custom session names with a Unix socket `listen EINVAL`, so short session names are required.
 - The `chatgpt.com` signup UI is currently variant-driven. The email entry point may be hidden behind `更多选项`, and the password page may or may not expose the one-time-code alternative.
+- Even on the exact Codexbar OAuth URL, fresh accounts may still hit OpenAI phone verification during import.
 
 ## Failure Counter Table
 
@@ -66,8 +77,8 @@
 | stage_2_hide_my_email | 7 | 4 | Pure-code AX refactor initially failed twice: once by binding the email lookup to the wrong container, then by assuming the label field accepted direct `AXValue` writes | Recovered by switching to sheet-level AX containers and verified keyboard-input fallback for the label field; pure-code flow now succeeds both from cold start and from an already-open `iCloud` window | complete |
 | stage_3_openai_signup | 8 | 6 | During hardening, the script repeatedly regressed on three spots: stale Mail codes were submitted too early, the password page was misread as the email page, and `chatgpt.com` showed multiple entry variants (`免费注册` vs `更多选项`) | Recovered by moving to an isolated blank Playwright session, preferring email OTP when offered, gating Mail codes against the pre-existing latest code, and stopping immediately after email verification completes | complete |
 | stage_4_mail_code | 1 | 0 | none | Registration script successfully read the OpenAI verification code from Mail.app and advanced past email verification | complete |
-| stage_5_codexbar_import | 0 | 0 | none | none | pending |
-| stage_6_post_import_verification | 0 | 0 | none | none | pending |
+| stage_5_codexbar_import | 7 | 4 | Earlier script-only fresh run with `sherbet.pancake-5t@icloud.com` reported `import_failed` before the account appeared in config | Manual exact-URL import using the copied Codexbar popup URL reached localhost callback and imported `sherbet.pancake-5t@icloud.com`; this confirms the flow can succeed when the correct full OAuth URL is used end-to-end | complete |
+| stage_6_post_import_verification | 1 | 0 | none | Verified `perkier.levee.4d@icloud.com` exists in `~/.codexbar/config.json` and the active provider/account stayed on `funai` / `84CA9DC7-A435-4BBD-9447-13A749DAF840` | complete |
 
 ## Switch Strategy Table
 
@@ -189,3 +200,89 @@
       - `REGISTRATION_STATUS=REGISTERED_AFTER_EMAIL_VERIFICATION`
       - `STOP_REASON=email_verification_complete`
     - this run used the password path because the OTP option was not present on that specific password page variant
+- Stage 5 Codexbar import hardening pass:
+  - User clarified the critical constraint: Codexbar must receive its own localhost callback receipt, so the login must start from the exact OAuth URL shown in the Codexbar `OpenAI OAuth` floating window.
+  - Import script changes:
+    - replaced the old ad hoc browser steps with a Playwright state machine
+    - read the live Codexbar URL through `register/scripts/get_codexbar_auth_url.swift`
+    - open only that exact URL in an isolated browser session
+    - prefer `使用一次性验证码登录` when the login flow offers it
+    - support email/password/code/consent/about-you screens and explicitly classify `/add-phone` as an external block
+  - Manual verification on the exact Codexbar OAuth flow:
+    - using the floating-window URL moved the browser to `https://auth.openai.com/log-in`, then through OTP login to later auth stages
+    - this confirmed the script was on the correct Codexbar receipt-bearing path, not a generic login page
+  - Fresh end-to-end retry from scratch:
+    - created new relay address `perkier.levee.4d@icloud.com`
+    - registered new OpenAI account `perkier.levee.4d@icloud.com` with password `0Wi7Bc8JdZsM5tI0MCi0tcKk`
+    - initial import retries clarified two facts:
+      - OTP login on the exact Codexbar URL can still pass through `about-you` and sometimes reach `/add-phone`
+      - the root URL issue was real enough to fix: the flow must start from the exact OAuth URL shown in the floating window, not a generic OpenAI login entry
+  - Full-URL extraction hardening:
+    - user confirmed the floating `OpenAI OAuth` window itself is a valid source of truth as long as the script extracts the full URL, not just the visible portion
+    - updated `register/scripts/get_codexbar_auth_url.swift` to gather all matching auth URLs in the AX tree and return the longest complete value
+    - added `register/scripts/get_codexbar_safari_auth_url.applescript` as a fallback source when the browser tab already exists
+    - direct validation:
+      - AX-pressed `Copy Login Link` placed the full URL on the clipboard
+      - `get_codexbar_auth_url.swift` returned the exact same full URL byte-for-byte
+  - Successful exact-URL import run:
+    - command: `OPENAI_EMAIL='perkier.levee.4d@icloud.com' OPENAI_PASSWORD='0Wi7Bc8JdZsM5tI0MCi0tcKk' PLAYWRIGHT_SESSION='ci7' ./register/scripts/import_openai_account_to_codexbar.sh`
+    - browser reached `http://localhost:1455/auth/callback?...` with page text `Codexbar captured the localhost callback`
+    - `perkier.levee.4d@icloud.com` appeared in `~/.codexbar/config.json`
+    - active provider/account stayed unchanged at `funai` / `84CA9DC7-A435-4BBD-9447-13A749DAF840`
+  - Additional safety fix:
+    - removed the accidental token-bearing debug print from `wait_for_account_import()` so the script no longer emits OAuth secrets while polling for config updates
+  - Fully automated fresh-round verification:
+    - top-level script `register/scripts/create_and_import_openai_account.sh` now appends `email,password,status` rows to `register/codex.csv`
+    - clean run command: `HIDE_MY_EMAIL_LABEL='CodexReg13' ./register/scripts/create_and_import_openai_account.sh`
+    - fresh relay created and used: `sherbet.pancake-5t@icloud.com`
+    - `register/codex.csv` recorded: `sherbet.pancake-5t@icloud.com,<password>,import_failed`
+    - result: the script completed registration but failed import with `Codexbar import blocked by OpenAI phone verification for sherbet.pancake-5t@icloud.com`
+    - post-run verification:
+      - `sherbet.pancake-5t@icloud.com` is not present in `~/.codexbar/config.json`
+      - active provider/account remained unchanged at `funai` / `84CA9DC7-A435-4BBD-9447-13A749DAF840`
+  - Manual exact-URL verification for the previously failed account:
+    - started from the Codexbar floating `OpenAI OAuth` window
+    - AX-pressed `Copy Login Link` and captured the exact full authorization URL from the popup
+    - confirmed that copied URL matches the output of `register/scripts/get_codexbar_auth_url.swift`
+    - manually drove that exact URL in-browser for `sherbet.pancake-5t@icloud.com`
+    - chose `使用一次性验证码登录`, waited for a new email code, submitted it, accepted Codex consent, and reached `http://localhost:1455/auth/callback?...`
+    - after the localhost callback, `sherbet.pancake-5t@icloud.com` appeared in `~/.codexbar/config.json`
+    - active provider/account still remained `funai` / `84CA9DC7-A435-4BBD-9447-13A749DAF840`
+  - Interpretation update:
+    - manual success on the exact copied popup URL means the earlier failing script run was not blocked by OpenAI policy for this account
+    - the import path is sensitive to using the exact full Codexbar OAuth URL and preserving that path through the login flow
+  - Final pure-automation validation after popup-only URL hardening:
+    - user requested one more fully automatic fresh run after disabling Safari fallback and recording the exact URL into `register/codex.csv`
+    - command: `HIDE_MY_EMAIL_LABEL='CodexReg17' ALLOW_SAFARI_AUTH_URL_FALLBACK=0 REGISTRATION_SETTLE_SECS=60 ./register/scripts/create_and_import_openai_account.sh`
+    - result:
+      - new relay / account: `taboo-cots.6j@icloud.com`
+      - password: `IQQDB5fGTNht2nPO6Bg7PyVl`
+      - import script reported `AUTH_URL_SOURCE=popup_copy`
+      - `register/codex.csv` recorded the full OAuth URL in the `url` column for this row before the final success update
+      - final CSV row: `taboo-cots.6j@icloud.com,IQQDB5fGTNht2nPO6Bg7PyVl,success,<full oauth url>`
+      - `taboo-cots.6j@icloud.com` appeared in `~/.codexbar/config.json`
+      - active provider/account still remained `funai` / `84CA9DC7-A435-4BBD-9447-13A749DAF840`
+  - OAuth navigation unit check:
+    - user asked to focus specifically on how the OAuth URL gets injected into Chrome
+    - changed the import script from `playwright-cli open "$AUTH_URL"` to:
+      - open `about:blank`
+      - navigate with `page.goto(authUrl)` inside `run-code`
+      - capture the first main-frame navigation request and compare it against the exact OAuth URL
+    - isolated verification command:
+      - `TEST_OAUTH_NAV_ONLY=1 ALLOW_SAFARI_AUTH_URL_FALLBACK=0 OPENAI_EMAIL='dummy@example.com' PLAYWRIGHT_SESSION='nav1' ./register/scripts/import_openai_account_to_codexbar.sh`
+    - observed output:
+      - `AUTH_URL_SOURCE=popup_ax`
+      - `OAUTH_NAVIGATION_VERIFIED=1`
+    - meaning: the script now proves the copied Codexbar OAuth URL is the URL actually used for the first browser navigation
+  - Retry of the previously failed pure-automation account:
+    - user asked to retry `tracery-moons.6j@icloud.com` directly before considering any Chrome MCP alternative
+    - command: `ALLOW_SAFARI_AUTH_URL_FALLBACK=0 OPENAI_EMAIL='tracery-moons.6j@icloud.com' OPENAI_PASSWORD='GvRZfAFZ73NWRs4uE7op27g2' PLAYWRIGHT_SESSION='ci-retry1' ./register/scripts/import_openai_account_to_codexbar.sh`
+    - observed output:
+      - `AUTH_URL_SOURCE=popup_copy`
+      - `IMPORTED_EMAIL=tracery-moons.6j@icloud.com`
+    - verification:
+      - `tracery-moons.6j@icloud.com` is now present in `~/.codexbar/config.json`
+      - active provider/account still remained `funai` / `84CA9DC7-A435-4BBD-9447-13A749DAF840`
+    - conclusion:
+      - the current popup-only URL path is capable of succeeding on the same account that previously failed
+      - Chrome MCP installation is not required to continue this workflow at the moment
