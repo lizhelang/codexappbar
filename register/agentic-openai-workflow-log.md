@@ -14,6 +14,12 @@
     - The current shell wrapper is now a pure Swift launcher. Stage 2 no longer falls back to OCR or screenshot-driven clicking.
   - Signup: `RELAY_EMAIL=... ./register/chatgpt-anon-register/scripts/register_chatgpt.sh`
     - Keep `PLAYWRIGHT_SESSION` short. A long custom session name triggered `playwright-cli` daemon socket `EINVAL` on this Mac.
+    - Start each run with a fresh isolated browser session from `about:blank`, then navigate into `https://chatgpt.com/auth/login`.
+    - Current stable Playwright path handles two login entry variants on `chatgpt.com`:
+      - variant A: `免费注册`
+      - variant B: `更多选项 -> 电子邮件地址 -> 继续`
+    - If the password page exposes `使用一次性验证码注册`, prefer that branch; otherwise fall back to password creation.
+    - Treat the run as complete immediately after email verification succeeds and the flow leaves the verification page. Do not block on the later profile form unless a future task explicitly requires it.
   - Import: `OPENAI_EMAIL=... OPENAI_PASSWORD=... ./register/scripts/import_openai_account_to_codexbar.sh`
 - Prefer Codexbar localhost callback capture. Manual callback entry is a last-resort fallback only if the listener is actually broken.
 - After every successful stage, immediately write the validated path back into this file.
@@ -50,6 +56,7 @@
 - Current installed `codexbar.app` does not expose a bundled `codexbarctl` binary, so post-import verification currently falls back to config inspection unless a CLI target is added later.
 - The current AX helper for Hide My Email depends on the present button/window titles remaining compatible with `iCloud`, `隐藏邮件地址`, `创建新地址`, `继续`, and `完成`.
 - `playwright-cli` on this Mac rejects overly long custom session names with a Unix socket `listen EINVAL`, so short session names are required.
+- The `chatgpt.com` signup UI is currently variant-driven. The email entry point may be hidden behind `更多选项`, and the password page may or may not expose the one-time-code alternative.
 
 ## Failure Counter Table
 
@@ -57,7 +64,7 @@
 | --- | ---: | ---: | --- | --- | --- |
 | stage_1_precheck | 1 | 0 | none | Fallback to direct app/config inspection after confirming this `codexbar.app` build does not ship `codexbarctl` | complete |
 | stage_2_hide_my_email | 7 | 4 | Pure-code AX refactor initially failed twice: once by binding the email lookup to the wrong container, then by assuming the label field accepted direct `AXValue` writes | Recovered by switching to sheet-level AX containers and verified keyboard-input fallback for the label field; pure-code flow now succeeds both from cold start and from an already-open `iCloud` window | complete |
-| stage_3_openai_signup | 2 | 1 | First attempt failed before browser launch because `PLAYWRIGHT_SESSION='chatgpt-signup-20260404-1'` caused Playwright daemon socket `listen EINVAL` | Retried with short session name `cg1`; account reached authenticated `https://chatgpt.com/` | complete |
+| stage_3_openai_signup | 8 | 6 | During hardening, the script repeatedly regressed on three spots: stale Mail codes were submitted too early, the password page was misread as the email page, and `chatgpt.com` showed multiple entry variants (`免费注册` vs `更多选项`) | Recovered by moving to an isolated blank Playwright session, preferring email OTP when offered, gating Mail codes against the pre-existing latest code, and stopping immediately after email verification completes | complete |
 | stage_4_mail_code | 1 | 0 | none | Registration script successfully read the OpenAI verification code from Mail.app and advanced past email verification | complete |
 | stage_5_codexbar_import | 0 | 0 | none | none | pending |
 | stage_6_post_import_verification | 0 | 0 | none | none | pending |
@@ -155,3 +162,30 @@
   - Generated password: `X1duEomOYYBdOeX4SxiSlJym`
   - Verification mail code was fetched automatically from Mail.app by `get_latest_openai_code.applescript`
   - Success signal: browser landed on `https://chatgpt.com/` with page title `ChatGPT`
+- Stage 3 Playwright hardening pass:
+  - User required a pure Playwright browser flow, with development-time snapshots allowed but no OCR/screenshot dependency in the runtime script.
+  - Implemented a fresh-session startup:
+    - use a short sanitized `PLAYWRIGHT_SESSION`
+    - open `about:blank`
+    - run the browser with `--isolated`
+    - navigate into `https://chatgpt.com/auth/login`
+  - Hardened login entry variants:
+    - variant A snapshot showed `免费注册`
+    - variant B snapshot showed `更多选项`, which then revealed `电子邮件地址` and `继续`
+    - current script handles both before entering the OpenAI auth pages
+  - Hardened the password/OTP fork:
+    - if `使用一次性验证码注册` is present on the password page, click it first
+    - if the OTP option is absent, continue through password creation
+  - Hardened Mail code retrieval:
+    - root cause: the old script could submit the mailbox's previous latest code before the new verification email arrived
+    - fix: capture the mailbox's latest code as a baseline before signup and refuse to submit a code until the mailbox shows a new six-digit code different from that baseline
+  - Hardened post-code completion:
+    - per user instruction, treat email verification as the terminal success point
+    - once a submitted code causes the flow to leave the verification page, stop and report success instead of continuing into profile fields
+  - Real validation result after the hardening:
+    - command: `RELAY_EMAIL='repost_nerves.7w@icloud.com' PLAYWRIGHT_SESSION='rg13' ./register/chatgpt-anon-register/scripts/register_chatgpt.sh`
+    - output:
+      - `REGISTERED_EMAIL=repost_nerves.7w@icloud.com`
+      - `REGISTRATION_STATUS=REGISTERED_AFTER_EMAIL_VERIFICATION`
+      - `STOP_REASON=email_verification_complete`
+    - this run used the password path because the OTP option was not present on that specific password page variant

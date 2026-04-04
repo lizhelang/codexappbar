@@ -67,10 +67,11 @@ BIRTH_DAY="08" \
 
 3. The registration script will:
 
-- open `chat.com` and follow the `chatgpt.com` signup path
-- generate a strong password if one is not provided
-- pull the newest OpenAI verification code from `Mail.app`
-- stop once the account reaches the post-signup onboarding state
+- start from a blank isolated Playwright browser session and enter the `chatgpt.com` signup path
+- handle the currently observed `免费注册` and `更多选项 -> 电子邮件地址 -> 继续` entry variants
+- generate a strong password only when the password path is actually needed
+- wait for a new OpenAI verification code from `Mail.app` instead of immediately reusing the mailbox's previous latest code
+- stop once email verification succeeds and the flow leaves the verification page
 
 4. To import the new account into local Codexbar without switching the current active account:
 
@@ -87,7 +88,7 @@ BIRTH_DAY="08" \
 - `scripts/get_latest_openai_code.applescript`
   Reads the newest six-digit OpenAI / ChatGPT code from recent inbox items
 - `scripts/register_chatgpt.sh`
-  Drives the browser registration flow with Playwright CLI
+  Drives the browser registration flow with Playwright CLI, preferring one-time-code signup when that option is present
 
 ## Output Contract
 

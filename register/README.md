@@ -69,6 +69,12 @@ Expected result:
   - if `iCloud` is already open, it continues from there
   - otherwise it deep-links directly into the Apple Account `iCloud` pane
 - Hide My Email creation no longer depends on OCR, screenshots, or `cliclick`.
+- `register/chatgpt-anon-register/scripts/register_chatgpt.sh` now starts from `about:blank` in an isolated Playwright session and then navigates into `chatgpt.com`.
+- The ChatGPT signup entry currently has at least two UI variants on this Mac:
+  - `免费注册`
+  - `更多选项 -> 电子邮件地址 -> 继续`
+- The signup script waits for a new Mail verification code instead of immediately reusing the mailbox's previous latest code.
+- For the current automation target, the signup script stops as soon as email verification succeeds and the flow leaves the verification page.
 - Existing-account import uses `register/scripts/get_codexbar_auth_url.swift` to read the active OAuth URL from the Codexbar login window.
 - Email verification codes are read through `register/chatgpt-anon-register/scripts/get_latest_openai_code.applescript`.
 - On this Mac, keep custom `PLAYWRIGHT_SESSION` names short; long names can fail before browser launch because the local daemon socket path becomes invalid.
