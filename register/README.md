@@ -7,6 +7,10 @@ There are two main lanes:
 1. Import an existing OpenAI account into Codexbar
 2. Create a new OpenAI account on this Mac, then import it into Codexbar
 
+There is also a batch variant for the second lane when you want a longer gap between registration and Codexbar login:
+
+3. Create multiple new OpenAI accounts first, then import that batch into Codexbar sequentially
+
 The current Codexbar build auto-listens on `http://localhost:1455/auth/callback` while the OAuth window is open, so the browser callback no longer needs to be copied back by hand.
 
 ## Prerequisites
@@ -60,11 +64,37 @@ Expected result:
 - a new OpenAI account is registered
 - the generated credentials are reused to import the account into Codexbar
 - the account is added to Codexbar without switching the active one
-- each top-level run appends `email,password,status` to `register/codex.csv`
+- each top-level run appends or updates `email,password,status,url` in `register/codex.csv`
+
+## Batch Create Then Import
+
+Register several new accounts first, then import only the accounts from that batch one by one:
+
+```bash
+./register/scripts/create_and_import_openai_accounts_batch.sh
+```
+
+Optional overrides:
+
+```bash
+BATCH_SIZE=5 \
+IMPORT_PHASE_DELAY_SECS=0 \
+./register/scripts/create_and_import_openai_accounts_batch.sh
+```
+
+Expected result:
+
+- the script registers `BATCH_SIZE` fresh accounts first
+- each successful registration is written to `register/codex.csv` with `status=registered`
+- once registration stops, the script imports only the accounts created during that batch
+- successful imports are updated to `status=success`
+- failed imports are updated to `status=import_failed`
+- the earlier active Codexbar account remains unchanged
 
 ## Notes
 
 - `register/chatgpt-anon-register/scripts/create_hide_my_email.sh` is now a pure launcher around `register/chatgpt-anon-register/scripts/create_hide_my_email_ax.swift`.
+- `register/scripts/retry_codexbar_import_from_csv.sh` now retries every still-missing account in CSV order, writes `success` or `import_failed` back to `register/codex.csv`, and waits `LOGIN_INTERVAL_SECS` seconds between accounts (default `150`).
 - The Hide My Email helper resumes from the current `System Settings` state:
   - if `System Settings` is closed, it opens it
   - if `iCloud` is already open, it continues from there
@@ -77,6 +107,7 @@ Expected result:
 - The signup script waits for a new Mail verification code instead of immediately reusing the mailbox's previous latest code.
 - For the current automation target, the signup script stops as soon as email verification succeeds and the flow leaves the verification page.
 - Existing-account import uses `register/scripts/get_codexbar_auth_url.swift` to read the active OAuth URL from the Codexbar login window.
+- `register/scripts/create_and_import_openai_accounts_batch.sh` reuses the existing single-account create script in registration-only mode, then replays those fresh credentials through the existing import script.
 - Email verification codes are read through `register/chatgpt-anon-register/scripts/get_latest_openai_code.applescript`.
 - On this Mac, keep custom `PLAYWRIGHT_SESSION` names short; long names can fail before browser launch because the local daemon socket path becomes invalid.
 - If OpenAI changes its login flow or demands stronger verification such as phone checks, the browser automation may need adjustment.

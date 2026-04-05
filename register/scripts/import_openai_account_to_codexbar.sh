@@ -8,6 +8,7 @@ COPY_AUTH_URL_SCRIPT="$ROOT_DIR/scripts/copy_codexbar_auth_url.swift"
 SAFARI_AUTH_URL_SCRIPT="$ROOT_DIR/scripts/get_codexbar_safari_auth_url.applescript"
 LAUNCH_CHROME_SCRIPT="$ROOT_DIR/scripts/launch_chrome_cdp.sh"
 CDP_EVAL_SCRIPT="$ROOT_DIR/scripts/chrome_cdp_eval.mjs"
+CDP_NAVIGATE_SCRIPT="$ROOT_DIR/scripts/chrome_cdp_navigate.mjs"
 MAIL_CODE_SCRIPT="$ROOT_DIR/chatgpt-anon-register/scripts/get_latest_openai_code.applescript"
 CODEXBAR_APP="${CODEXBAR_APP:-/Applications/codexbar.app}"
 OPENAI_EMAIL="${OPENAI_EMAIL:-}"
@@ -189,6 +190,11 @@ run_cdp() {
   CDP_PORT="$CDP_PORT" CDP_JS_EXPR="$expr" node "$CDP_EVAL_SCRIPT" >/dev/null
 }
 
+navigate_cdp() {
+  local url="$1"
+  CDP_PORT="$CDP_PORT" CDP_NAV_URL="$url" node "$CDP_NAVIGATE_SCRIPT"
+}
+
 current_state_json() {
   cdp_eval_json "$(cat <<'JS'
 () => {
@@ -333,11 +339,22 @@ if [[ -z "$CHROME_USER_DATA_DIR" ]]; then
   CHROME_USER_DATA_DIR="/tmp/codexbar-cdp-${CDP_PORT}"
 fi
 
-PORT="$CDP_PORT" USER_DATA_DIR="$CHROME_USER_DATA_DIR" URL="$AUTH_URL" "$LAUNCH_CHROME_SCRIPT" >/dev/null
+PORT="$CDP_PORT" USER_DATA_DIR="$CHROME_USER_DATA_DIR" "$LAUNCH_CHROME_SCRIPT" >/dev/null
+NAVIGATION_JSON="$(navigate_cdp "$AUTH_URL")"
 
 if [[ "$TEST_OAUTH_NAV_ONLY" == "1" ]]; then
+  NAVIGATION_REQUEST_URL="$(
+    python3 - "$NAVIGATION_JSON" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+print(payload.get("requestedURL", ""))
+PY
+  )"
   printf 'OAUTH_NAVIGATION_VERIFIED=1\n'
   printf 'AUTH_URL=%s\n' "$AUTH_URL"
+  printf 'NAVIGATION_REQUEST_URL=%s\n' "$NAVIGATION_REQUEST_URL"
   exit 0
 fi
 

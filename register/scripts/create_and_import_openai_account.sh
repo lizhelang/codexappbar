@@ -6,8 +6,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HIDE_MY_EMAIL_SCRIPT="$ROOT_DIR/chatgpt-anon-register/scripts/create_hide_my_email.sh"
 REGISTER_SCRIPT="$ROOT_DIR/chatgpt-anon-register/scripts/register_chatgpt.sh"
 IMPORT_SCRIPT="$ROOT_DIR/scripts/import_openai_account_to_codexbar.sh"
+CSV_SHADOW_HELPER="$ROOT_DIR/scripts/codex_csv_shadow.sh"
 CSV_PATH="$ROOT_DIR/codex.csv"
 REGISTRATION_SETTLE_SECS="${REGISTRATION_SETTLE_SECS:-90}"
+IMPORT_AFTER_REGISTER="${IMPORT_AFTER_REGISTER:-1}"
 AUTH_URL_FILE="$(mktemp)"
 
 LOG_EMAIL=""
@@ -104,10 +106,12 @@ PY
 }
 
 sync_csv() {
+  codex_csv_begin_mutation "$CSV_PATH"
   ensure_csv_header
   if [[ -n "$LOG_EMAIL" ]]; then
     upsert_csv_row "$LOG_EMAIL" "$LOG_PASSWORD" "$LOG_STATUS" "$LOG_URL"
   fi
+  codex_csv_sync_shadow "$CSV_PATH"
 }
 
 finalize_log() {
@@ -122,6 +126,7 @@ trap finalize_log EXIT
 
 require_cmd bash
 require_cmd python3
+source "$CSV_SHADOW_HELPER"
 
 RELAY_EMAIL="$("$HIDE_MY_EMAIL_SCRIPT")"
 if [[ -z "$RELAY_EMAIL" ]]; then
@@ -147,6 +152,12 @@ sync_csv
 
 LOG_PASSWORD="$PASSWORD"
 sync_csv
+
+if [[ "$IMPORT_AFTER_REGISTER" != "1" ]]; then
+  printf 'REGISTERED_EMAIL=%s\n' "$REGISTERED_EMAIL"
+  printf 'PASSWORD=%s\n' "$PASSWORD"
+  exit 0
+fi
 
 if [[ "$REGISTRATION_SETTLE_SECS" =~ ^[0-9]+$ ]] && (( REGISTRATION_SETTLE_SECS > 0 )); then
   sleep "$REGISTRATION_SETTLE_SECS"
