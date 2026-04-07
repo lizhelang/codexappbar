@@ -49,6 +49,21 @@ EMAIL_FILTER="xxx@icloud.com" ./02login 1
 | `CSV_PATH` | codex.csv 路径 | `../codex.csv` |
 | `EMAIL_FILTER` | 仅处理指定邮箱（仅 02login） | 无 |
 
+## 登录失败观测
+
+- `02login` 和 `retry_codexbar_import_from_csv.sh` 会保留 CSV 状态为 `import_failed`
+- 底层导入脚本会把失败样本写入 `~/.codexbar/register-import-observations.jsonl`
+- 失败分类当前固定为：
+  - `phone_verification`
+  - `invalid_state`
+  - `cdp_race`
+  - `timeout`
+- 汇总命令：
+
+```bash
+python3 ../scripts/summarize_import_observations.py
+```
+
 ## CSV 状态流转
 
 | status | 含义 |

@@ -360,6 +360,19 @@
       - waits `LOGIN_INTERVAL_SECS` seconds between accounts, default `150`
     - verification:
       - `bash -n register/scripts/retry_codexbar_import_from_csv.sh`
+  - Import failure observation hardening:
+    - user requested failure analysis for future login/import failures, grouped into `phone_verification`, `invalid_state`, `cdp_race`, and `timeout`
+    - explicitly did not add UA spoofing, fingerprint spoofing, proxy rotation, or IP masking
+    - updated `register/scripts/import_openai_account_to_codexbar.sh` so it now:
+      - classifies failures before exit
+      - emits `IMPORT_FAILURE_CATEGORY=...` on failure
+      - appends structured records to `~/.codexbar/register-import-observations.jsonl`
+      - logs successes as `outcome=success` for longitudinal comparison
+    - local browser/control failures such as `No page target found for CDP evaluation` and local CDP connect failures are grouped under `cdp_race`
+    - added `register/scripts/summarize_import_observations.py` to summarize the current counts and recent failure samples
+    - verification:
+      - `bash -n register/scripts/import_openai_account_to_codexbar.sh`
+      - `python3 register/scripts/summarize_import_observations.py` (only if the observation log exists)
   - Chrome startup URL truncation hardening:
     - user clarified a different failure mode from the earlier DOM-input timing issue:
       - the popup-sourced OAuth URL itself was correct

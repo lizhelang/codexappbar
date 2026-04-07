@@ -140,6 +140,8 @@ Expected result:
 - For the current automation target, the signup script stops as soon as email verification succeeds and the flow leaves the verification page.
 - Existing-account import uses `register/scripts/get_codexbar_auth_url.swift` to read the active OAuth URL from the Codexbar login window.
 - `register/scripts/create_and_import_openai_accounts_batch.sh` reuses the existing single-account create script in registration-only mode, then replays those fresh credentials through the existing import script.
+- `register/scripts/import_openai_account_to_codexbar.sh` now records structured import observations to `~/.codexbar/register-import-observations.jsonl`. Future failures are classified into `phone_verification`, `invalid_state`, `cdp_race`, or `timeout`.
+- `register/scripts/summarize_import_observations.py` prints the current failure counts and recent samples from that observation log.
 - Email verification codes are read through `register/chatgpt-anon-register/scripts/get_latest_openai_code.applescript`.
 - On this Mac, keep custom `PLAYWRIGHT_SESSION` names short; long names can fail before browser launch because the local daemon socket path becomes invalid.
 - If OpenAI changes its login flow or demands stronger verification such as phone checks, the browser automation may need adjustment.

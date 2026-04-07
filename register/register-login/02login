@@ -164,10 +164,14 @@ for i in $(seq 0 $((LOGIN_COUNT - 1))); do
     ((IMPORTED++))
   else
     EXIT_CODE=$?
+    FAILURE_CATEGORY="$(printf '%s\n' "$output" | sed -n 's/^IMPORT_FAILURE_CATEGORY=//p' | tail -n 1)"
     printf '%s\n' "$output" >&2
     codex_csv_begin_mutation "$CSV_PATH"
     update_csv_status "$email" "$password" "import_failed"
     codex_csv_sync_shadow "$CSV_PATH"
+    if [[ -n "$FAILURE_CATEGORY" ]]; then
+      printf '⚠️  失败分类: %s\n' "$FAILURE_CATEGORY" >&2
+    fi
     printf '❌ [%s/%s] 导入失败 (exit %d)\n' "$item" "$LOGIN_COUNT" "$EXIT_CODE" >&2
     ((FAILED++))
   fi

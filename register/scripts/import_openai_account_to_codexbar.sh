@@ -28,6 +28,7 @@ TEST_OAUTH_NAV_ONLY="${TEST_OAUTH_NAV_ONLY:-0}"
 CDP_PORT="${CDP_PORT:-}"
 CHROME_USER_DATA_DIR="${CHROME_USER_DATA_DIR:-}"
 INVALID_STATE_RETRY_LIMIT="${INVALID_STATE_RETRY_LIMIT:-2}"
+IMPORT_OBSERVATION_LOG="${IMPORT_OBSERVATION_LOG:-$HOME/.codexbar/register-import-observations.jsonl}"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -258,6 +259,83 @@ cleanup_chrome_cdp() {
   fi
 }
 
+classify_import_failure() {
+  local detail="$1"
+  local reason="${2:-$stop_reason}"
+  local combined=""
+
+  combined="${reason}"$'\n'"${detail}"
+
+  if [[ "$combined" == *"phone_verification_required"* || "$combined" == *"/add-phone"* || "$combined" == *"phone verification"* || "$combined" == *"verify phone"* ]]; then
+    printf 'phone_verification\n'
+    return
+  fi
+
+  if [[ "$combined" == *"invalid_state"* || "$combined" == *"验证过程中出错"* ]]; then
+    printf 'invalid_state\n'
+    return
+  fi
+
+  if [[ "$combined" == *"No page target found for CDP evaluation"* || "$combined" == *"Couldn't connect to server"* || "$combined" == *"Failed to connect to 127.0.0.1 port"* || "$combined" == *"remote-debugging-port"* || "$combined" == *"CDP evaluation"* || "$combined" == *"CDP navigation"* ]]; then
+    printf 'cdp_race\n'
+    return
+  fi
+
+  printf 'timeout\n'
+}
+
+record_import_observation() {
+  local outcome="$1"
+  local category="$2"
+  local detail="${3:-}"
+
+  python3 - "$IMPORT_OBSERVATION_LOG" "$OPENAI_EMAIL" "$outcome" "$category" "$AUTH_URL_SOURCE" "$stop_reason" "$detail" <<'PY'
+import datetime as dt
+import json
+import os
+import sys
+
+path, email, outcome, category, auth_url_source, stop_reason, detail = sys.argv[1:]
+parent = os.path.dirname(path)
+if parent:
+    os.makedirs(parent, exist_ok=True)
+
+record = {
+    "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "email": email,
+    "outcome": outcome,
+    "category": category,
+    "auth_url_source": auth_url_source,
+    "stop_reason": stop_reason,
+    "detail": detail[:2000],
+}
+
+with open(path, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+PY
+}
+
+exit_with_classified_failure() {
+  local detail="$1"
+  local category=""
+
+  category="$(classify_import_failure "$detail")"
+  printf 'IMPORT_FAILURE_CATEGORY=%s\n' "$category" >&2
+  record_import_observation "failure" "$category" "$detail"
+  printf '%s\n' "$detail" >&2
+  exit 1
+}
+
+run_cdp_or_fail() {
+  local expr="$1"
+  local context="$2"
+  local output=""
+
+  if ! output="$(CDP_PORT="$CDP_PORT" CDP_JS_EXPR="$expr" node "$CDP_EVAL_SCRIPT" 2>&1 >/dev/null)"; then
+    exit_with_classified_failure "$context"$'\n'"$output"
+  fi
+}
+
 trap cleanup_chrome_cdp EXIT
 
 if [[ -z "$OPENAI_EMAIL" ]]; then
@@ -319,11 +397,10 @@ done
 
 if [[ -z "$AUTH_URL" ]]; then
   if [[ "$ALLOW_SAFARI_AUTH_URL_FALLBACK" == "1" ]]; then
-    printf 'failed to read the Codexbar OAuth URL from the popup or Safari fallback\n' >&2
+    exit_with_classified_failure 'failed to read the Codexbar OAuth URL from the popup or Safari fallback'
   else
-    printf 'failed to read the Codexbar OAuth URL from the popup\n' >&2
+    exit_with_classified_failure 'failed to read the Codexbar OAuth URL from the popup'
   fi
-  exit 1
 fi
 
 AUTH_URL="$(printf '%s' "$AUTH_URL" | tr -d '\r\n')"
@@ -341,8 +418,13 @@ if [[ -z "$CHROME_USER_DATA_DIR" ]]; then
   CHROME_USER_DATA_DIR="/tmp/codexbar-cdp-${CDP_PORT}"
 fi
 
-PORT="$CDP_PORT" USER_DATA_DIR="$CHROME_USER_DATA_DIR" "$LAUNCH_CHROME_SCRIPT" >/dev/null
-NAVIGATION_JSON="$(navigate_cdp "$AUTH_URL")"
+if ! launch_output="$(PORT="$CDP_PORT" USER_DATA_DIR="$CHROME_USER_DATA_DIR" "$LAUNCH_CHROME_SCRIPT" 2>&1 >/dev/null)"; then
+  exit_with_classified_failure "failed to launch Chrome CDP session"$'\n'"$launch_output"
+fi
+
+if ! NAVIGATION_JSON="$(navigate_cdp "$AUTH_URL" 2>&1)"; then
+  exit_with_classified_failure "failed to navigate Chrome CDP to the Codexbar OAuth URL"$'\n'"$NAVIGATION_JSON"
+fi
 
 if [[ "$TEST_OAUTH_NAV_ONLY" == "1" ]]; then
   NAVIGATION_REQUEST_URL="$(
@@ -370,7 +452,9 @@ status="IN_PROGRESS"
 stop_reason=""
 
 while (( SECONDS < deadline )); do
-  STATE_JSON="$(current_state_json)"
+  if ! STATE_JSON="$(current_state_json 2>&1)"; then
+    exit_with_classified_failure "failed to read current browser state from Chrome CDP"$'\n'"$STATE_JSON"
+  fi
   load_state_vars "$STATE_JSON"
 
   if [[ "$CALLBACKPAGE" == "1" ]]; then
@@ -388,7 +472,7 @@ while (( SECONDS < deadline )); do
 
   if [[ "$INVALIDSTATEERROR" == "1" ]]; then
     if (( invalid_state_retries < INVALID_STATE_RETRY_LIMIT )); then
-      run_cdp "$(cat <<'JS'
+      run_cdp_or_fail "$(cat <<'JS'
 () => {
   const btn = [...document.querySelectorAll('button, a')].find((el) => /^(重试|Retry)$/i.test((el.innerText || '').trim()));
   if (!btn) throw new Error('invalid_state retry button not found');
@@ -396,7 +480,7 @@ while (( SECONDS < deadline )); do
   return true;
 }
 JS
-)"
+)" 'failed to click the invalid_state retry action'
       ((invalid_state_retries += 1))
       sleep 3
       continue
@@ -408,7 +492,7 @@ JS
   fi
 
   if [[ "$CONSENTCONTINUE" == "1" ]]; then
-    run_cdp "$(cat <<'JS'
+    run_cdp_or_fail "$(cat <<'JS'
 () => {
   const text = ['继续', 'Continue', 'Allow', '允许', 'Authorize'];
   const buttons = [...document.querySelectorAll('button')];
@@ -417,7 +501,7 @@ JS
   return true;
 }
 JS
-)"
+)" 'failed to click the Codex consent continue action'
     sleep 2
     if wait_for_account_import "$OPENAI_EMAIL" 120; then
       status="IMPORTED"
@@ -427,7 +511,7 @@ JS
   fi
 
   if [[ "$PREFER_EMAIL_OTP_LOGIN" == "1" && "$OTPLOGINOPTION" == "1" ]]; then
-    run_cdp "$(cat <<'JS'
+    run_cdp_or_fail "$(cat <<'JS'
 () => {
   const buttons = [...document.querySelectorAll('button')];
   const btn = buttons.find((el) => /使用一次性验证码登录|one-time passcode|one-time code/i.test((el.innerText || '').trim()));
@@ -436,7 +520,7 @@ JS
   return true;
 }
 JS
-)"
+)" 'failed to switch the OpenAI login flow to email OTP'
     sleep 2
     continue
   fi
@@ -454,7 +538,7 @@ JS
       CODE_JS="${CODE//\\/\\\\}"
       CODE_JS="${CODE_JS//\"/\\\"}"
 
-      run_cdp "$(cat <<JS
+      run_cdp_or_fail "$(cat <<JS
 () => {
   const code = "$CODE_JS";
   const inputs = [...document.querySelectorAll('input')];
@@ -489,21 +573,24 @@ JS
   return true;
 }
 JS
-)"
+)" 'failed while writing or submitting the OpenAI email verification code'
       sleep 3
       code_wait_phase="initial_wait"
       continue
     fi
 
     if (( resend_attempts < 2 )); then
-      run_cdp "$(cat <<'JS'
+      if ! resend_output="$(CDP_PORT="$CDP_PORT" CDP_JS_EXPR="$(cat <<'JS'
 () => {
   const btn = [...document.querySelectorAll('button, a')].find((el) => /重新发送|resend/i.test((el.innerText || '').trim()));
   if (btn) btn.click();
   return true;
 }
 JS
-)" || true
+)" node "$CDP_EVAL_SCRIPT" 2>&1 >/dev/null)"; then
+        printf 'IMPORT_RETRY_NOTE=resend_click_failed\n' >&2
+        printf '%s\n' "$resend_output" >&2
+      fi
       ((resend_attempts += 1))
       code_wait_phase="resent_wait"
       sleep 5
@@ -514,7 +601,7 @@ JS
   fi
 
   if [[ "$PASSWORDINPUT" == "1" && -n "$OPENAI_PASSWORD" ]]; then
-    run_cdp "$(cat <<JS
+    run_cdp_or_fail "$(cat <<JS
 () => {
   const field = [...document.querySelectorAll('input')].find((el) => el.type === 'password');
   if (field) {
@@ -527,13 +614,13 @@ JS
   return true;
 }
 JS
-)"
+)" 'failed to fill or submit the OpenAI password form'
     sleep 2
     continue
   fi
 
   if [[ "$EMAILINPUT" == "1" ]]; then
-    run_cdp "$(cat <<JS
+    run_cdp_or_fail "$(cat <<JS
 () => {
   const inputs = [...document.querySelectorAll('input')];
   const field = inputs.find((el) => /电子邮件地址|email/.test([el.placeholder, el.getAttribute('aria-label'), el.name, el.value].join(' ')));
@@ -551,13 +638,13 @@ JS
   throw new Error('continue button not found on codexbar email step');
 }
 JS
-)"
+)" 'failed to fill or submit the OpenAI email form'
     sleep 2
     continue
   fi
 
   if [[ "$AGEINPUT" == "1" || "$YEARINPUT" == "1" || "$NAMEINPUT" == "1" ]]; then
-    run_cdp "$(cat <<JS
+    run_cdp_or_fail "$(cat <<JS
 () => {
   const fullName = "$ACCOUNT_NAME_JS";
   const age = "$AGE_JS";
@@ -603,7 +690,7 @@ JS
   return true;
 }
 JS
-)"
+)" 'failed to fill the OpenAI about-you form'
     sleep 3
     continue
   fi
@@ -613,17 +700,17 @@ done
 
 if [[ "$status" != "IMPORTED" ]]; then
   if [[ "$stop_reason" == "phone_verification_required" ]]; then
-    printf 'Codexbar import blocked by OpenAI phone verification for %s\n' "$OPENAI_EMAIL" >&2
+    exit_with_classified_failure "Codexbar import blocked by OpenAI phone verification for $OPENAI_EMAIL"
   elif [[ "$stop_reason" == "invalid_state" ]]; then
-    printf 'Codexbar import hit an OpenAI invalid_state error for %s\n' "$OPENAI_EMAIL" >&2
+    exit_with_classified_failure "Codexbar import hit an OpenAI invalid_state error for $OPENAI_EMAIL"
   else
-    printf 'timed out while importing %s into Codexbar\n' "$OPENAI_EMAIL" >&2
+    exit_with_classified_failure "timed out while importing $OPENAI_EMAIL into Codexbar"
   fi
-  exit 1
 fi
 
 printf 'IMPORTED_EMAIL=%s\n' "$OPENAI_EMAIL"
 printf 'CDP_PORT=%s\n' "$CDP_PORT"
+record_import_observation "success" "imported" "Codexbar import completed successfully"
 python3 - <<'PY'
 import json
 

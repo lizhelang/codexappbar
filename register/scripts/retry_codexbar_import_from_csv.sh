@@ -215,8 +215,12 @@ while (( index < ${#TARGETS[@]} )); do
     update_csv_status "$email" "$password" "success"
     ((IMPORTED_COUNT += 1))
   else
+    FAILURE_CATEGORY="$(printf '%s\n' "$output" | sed -n 's/^IMPORT_FAILURE_CATEGORY=//p' | tail -n 1)"
     printf '%s\n' "$output" >&2
     update_csv_status "$email" "$password" "import_failed"
+    if [[ -n "$FAILURE_CATEGORY" ]]; then
+      printf 'IMPORT_FAILURE_CATEGORY=%s\n' "$FAILURE_CATEGORY" >&2
+    fi
     ((FAILED_COUNT += 1))
   fi
 
