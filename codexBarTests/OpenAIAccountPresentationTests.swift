@@ -89,6 +89,26 @@ final class OpenAIAccountPresentationTests: XCTestCase {
         XCTAssertEqual(summaryText, "Running status unavailable")
     }
 
+    func testUnavailableAttributionShowsRuntimeLogInitializationHint() {
+        let logsDatabaseName = CodexPaths.logsSQLiteURL.lastPathComponent
+        let attribution = OpenAIRunningThreadAttribution(
+            threads: [],
+            summary: .unavailable,
+            recentActivityWindow: 5,
+            diagnosticMessage: "runtime database missing table: \(logsDatabaseName).logs",
+            unavailableReason: .missingTable(database: logsDatabaseName, table: "logs")
+        )
+
+        let summaryText = OpenAIAccountPresentation.runningThreadSummaryText(
+            attribution: attribution
+        )
+
+        XCTAssertEqual(
+            summaryText,
+            "Running status unavailable (runtime logs not initialized)"
+        )
+    }
+
     func testSummaryTextIncludesUnattributedRunningThreads() {
         let summary = OpenAIRunningThreadAttribution.Summary(
             availability: .available,
@@ -99,6 +119,32 @@ final class OpenAIAccountPresentationTests: XCTestCase {
         let text = OpenAIAccountPresentation.runningThreadSummaryText(summary: summary)
 
         XCTAssertEqual(text, "Running · 3 threads / 1 account · 1 unattributed thread")
+    }
+
+    func testManualActivationContextActionsExposeTwoOverridesAndMarkUpdateConfigDefault() {
+        let actions = OpenAIAccountPresentation.manualActivationContextActions(
+            defaultBehavior: .updateConfigOnly
+        )
+
+        XCTAssertEqual(OpenAIAccountPresentation.primaryManualActivationTrigger, .primaryTap)
+        XCTAssertEqual(actions.map(\.behavior), [.updateConfigOnly, .launchNewInstance])
+        XCTAssertEqual(
+            actions.map(\.trigger),
+            [.contextOverride(.updateConfigOnly), .contextOverride(.launchNewInstance)]
+        )
+        XCTAssertEqual(
+            actions.map(\.title),
+            ["Update Config Only (This Time)", "Launch New Instance (This Time)"]
+        )
+        XCTAssertEqual(actions.filter(\.isDefault).map(\.behavior), [.updateConfigOnly])
+    }
+
+    func testManualActivationContextActionsMarkLaunchDefault() {
+        let actions = OpenAIAccountPresentation.manualActivationContextActions(
+            defaultBehavior: .launchNewInstance
+        )
+
+        XCTAssertEqual(actions.filter(\.isDefault).map(\.behavior), [.launchNewInstance])
     }
 
     private func makeAccount(accountId: String, isActive: Bool) -> TokenAccount {

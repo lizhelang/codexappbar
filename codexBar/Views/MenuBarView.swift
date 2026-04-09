@@ -302,7 +302,8 @@ struct MenuBarView: View {
         OpenAIAccountListLayout.groupedAccounts(
             from: store.accounts,
             summary: self.runningThreadSummary,
-            quotaSortSettings: self.store.config.openAI.quotaSort
+            quotaSortSettings: self.store.config.openAI.quotaSort,
+            preferredAccountOrder: self.store.config.openAI.preferredDisplayAccountOrder
         )
     }
 
@@ -328,7 +329,7 @@ struct MenuBarView: View {
 
     private var nextUseSummaryDetail: String {
         let runningThreadSummary = OpenAIAccountPresentation.runningThreadSummaryText(
-            summary: self.runningThreadSummary
+            attribution: self.runningThreadAttribution
         )
         return "\(runningThreadSummary) · Model: \(store.activeModel)"
     }
@@ -781,13 +782,18 @@ struct MenuBarView: View {
                         )
                         AccountRowView(
                             account: account,
-                            isNextUseTarget: rowState.isNextUseTarget,
-                            runningThreadCount: rowState.runningThreadCount,
+                            rowState: rowState,
                             isRefreshing: refreshingAccounts.contains(account.id),
                             popupAlertThresholdPercent: self.store.config.openAI.popupAlertThresholdPercent,
-                            usageDisplayMode: self.store.config.openAI.usageDisplayMode
-                        ) {
-                            Task { await activateAccount(account) }
+                            usageDisplayMode: self.store.config.openAI.usageDisplayMode,
+                            defaultManualActivationBehavior: self.store.config.openAI.manualActivationBehavior
+                        ) { trigger in
+                            Task {
+                                await activateAccount(
+                                    account,
+                                    trigger: trigger
+                                )
+                            }
                         } onRefresh: {
                             Task { await refreshAccount(account, announceResult: true) }
                         } onReauth: {
@@ -917,15 +923,32 @@ struct MenuBarView: View {
         }
     }
 
-    private func activateAccount(_ account: TokenAccount) async {
+    private func activateAccount(
+        _ account: TokenAccount,
+        trigger: OpenAIManualActivationTrigger = .primaryTap
+    ) async {
         do {
-            try await self.switchAccountAndLaunchNewInstance(
-                account,
-                reason: .manual,
-                automatic: false,
-                forced: false,
-                closeExistingCodexApps: false
-            )
+            _ = try await OpenAIManualActivationExecutor.execute(
+                configuredBehavior: self.store.config.openAI.manualActivationBehavior,
+                trigger: trigger
+            ) {
+                try self.store.activate(
+                    account,
+                    reason: .manual,
+                    automatic: false,
+                    forced: false,
+                    protectedByManualGrace: false
+                )
+            } launchNewInstance: {
+                try await self.switchAccountAndLaunchNewInstance(
+                    account,
+                    reason: .manual,
+                    automatic: false,
+                    forced: false,
+                    closeExistingCodexApps: false
+                )
+            }
+
             self.store.refreshLocalCostSummary()
             self.refreshRunningThreadAttribution()
             self.showError = nil
@@ -1016,28 +1039,12 @@ struct MenuBarView: View {
         DetachedWindowPresenter.shared.show(
             id: "openai-settings",
             title: L.settingsWindowTitle,
-            size: CGSize(width: 560, height: 620)
+            size: CGSize(width: 820, height: 620)
         ) {
-            OpenAISettingsSheet(
+            SettingsWindowView(
                 store: self.store,
                 codexAppPathPanelService: self.codexAppPathPanelService
-            ) { popupAlertThresholdPercent, usageDisplayMode, plusRelativeWeight, teamRelativeToPlusMultiplier, preferredCodexAppPath, autoRoutingPromptMode in
-                do {
-                    try self.store.saveDesktopAndOpenAISettings(
-                        accountOrder: self.store.config.openAI.accountOrder,
-                        popupAlertThresholdPercent: popupAlertThresholdPercent,
-                        usageDisplayMode: usageDisplayMode,
-                        plusRelativeWeight: plusRelativeWeight,
-                        teamRelativeToPlusMultiplier: teamRelativeToPlusMultiplier,
-                        preferredCodexAppPath: preferredCodexAppPath,
-                        autoRoutingPromptMode: autoRoutingPromptMode
-                    )
-                    self.showError = nil
-                    DetachedWindowPresenter.shared.close(id: "openai-settings")
-                } catch {
-                    self.showError = error.localizedDescription
-                }
-            } onCancel: {
+            ) {
                 DetachedWindowPresenter.shared.close(id: "openai-settings")
             }
         }
@@ -1351,365 +1358,6 @@ struct MenuBarView: View {
             }
         }
     }
-}
-
-private struct CodexAppPathSettingsSection: View {
-    @Binding var preferredCodexAppPath: String?
-    @Binding var validationMessage: String?
-
-    let codexAppPathPanelService: CodexAppPathPanelService
-
-    private var status: CodexDesktopPreferredAppPathStatus {
-        CodexDesktopLaunchProbeService.preferredAppPathStatus(for: self.preferredCodexAppPath)
-    }
-
-    private var displayedPath: String {
-        switch self.status {
-        case .automatic:
-            return self.preferredCodexAppPath ?? L.codexAppPathEmptyValue
-        case .manualValid(let path), .manualInvalid(let path):
-            return path
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L.codexAppPathTitle)
-                .font(.system(size: 12, weight: .medium))
-
-            Text(L.codexAppPathHint)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-
-            Text(self.displayedPath)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.secondary.opacity(0.06))
-                )
-
-            HStack(spacing: 10) {
-                Button(L.codexAppPathChooseAction) {
-                    self.chooseCodexApp()
-                }
-
-                Button(L.codexAppPathResetAction) {
-                    self.preferredCodexAppPath = nil
-                    self.validationMessage = nil
-                }
-                .disabled((self.preferredCodexAppPath ?? "").isEmpty)
-            }
-
-            Text(self.statusText)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(self.statusColor)
-
-            if let validationMessage {
-                Text(validationMessage)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.red)
-            }
-        }
-    }
-
-    private var statusText: String {
-        switch self.status {
-        case .automatic:
-            return L.codexAppPathAutomaticStatus
-        case .manualValid:
-            return L.codexAppPathUsingManualStatus
-        case .manualInvalid:
-            return L.codexAppPathInvalidFallbackStatus
-        }
-    }
-
-    private var statusColor: Color {
-        switch self.status {
-        case .automatic, .manualValid:
-            return .secondary
-        case .manualInvalid:
-            return .orange
-        }
-    }
-
-    private func chooseCodexApp() {
-        guard let selectedURL = self.codexAppPathPanelService.requestCodexAppURL(
-            currentPath: self.preferredCodexAppPath
-        ) else {
-            return
-        }
-
-        guard let validatedURL = CodexDesktopLaunchProbeService.validatedPreferredCodexAppURL(
-            from: selectedURL.path
-        ) else {
-            self.validationMessage = L.codexAppPathInvalidSelection
-            return
-        }
-
-        self.preferredCodexAppPath = validatedURL.path
-        self.validationMessage = nil
-    }
-}
-
-private struct AutoRoutingPromptModeSettingsSection: View {
-    @Binding var promptMode: CodexBarAutoRoutingPromptMode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L.autoRoutingPromptModeTitle)
-                .font(.system(size: 12, weight: .medium))
-
-            Text(L.autoRoutingPromptModeHint)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(CodexBarAutoRoutingPromptMode.allCases) { mode in
-                    Button {
-                        self.promptMode = mode
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: self.promptMode == mode ? "largecircle.fill.circle" : "circle")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(self.promptMode == mode ? .accentColor : .secondary)
-                                .padding(.top, 2)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(mode.title)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.primary)
-                                Text(mode.detail)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(self.promptMode == mode ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.06))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-}
-
-private struct UsageDisplayModeSettingsSection: View {
-    @Binding var usageDisplayMode: CodexBarUsageDisplayMode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L.usageDisplayModeTitle)
-                .font(.system(size: 12, weight: .medium))
-
-            Picker(L.usageDisplayModeTitle, selection: self.$usageDisplayMode) {
-                ForEach(CodexBarUsageDisplayMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-}
-
-private struct PopupAlertThresholdSettingsSection: View {
-    @Binding var popupAlertThresholdPercent: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(L.popupAlertThresholdTitle)
-                    .font(.system(size: 12, weight: .medium))
-                Spacer()
-                Text(self.summary)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
-            }
-
-            Slider(
-                value: self.$popupAlertThresholdPercent,
-                in: 0...100,
-                step: 5
-            )
-
-            Text(L.popupAlertThresholdHint)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var summary: String {
-        if self.popupAlertThresholdPercent <= 0 {
-            return L.popupAlertDisabled
-        }
-        return L.popupAlertThresholdValue(Int(self.popupAlertThresholdPercent))
-    }
-}
-
-private struct QuotaSortSettingsSection: View {
-    @Binding var plusRelativeWeight: Double
-    @Binding var teamRelativeToPlusMultiplier: Double
-
-    private var teamAbsoluteWeight: Double {
-        self.plusRelativeWeight * self.teamRelativeToPlusMultiplier
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L.quotaSortSettingsTitle)
-                .font(.system(size: 12, weight: .medium))
-
-            Text(L.quotaSortSettingsHint)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(L.quotaSortPlusWeightTitle)
-                        .font(.system(size: 11, weight: .medium))
-                    Spacer()
-                    Text(L.quotaSortPlusWeightValue(self.plusRelativeWeight))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .monospacedDigit()
-                }
-
-                Slider(
-                    value: self.$plusRelativeWeight,
-                    in: CodexBarOpenAISettings.QuotaSortSettings.plusRelativeWeightRange,
-                    step: 0.5
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(L.quotaSortTeamRatioTitle)
-                        .font(.system(size: 11, weight: .medium))
-                    Spacer()
-                    Text(
-                        L.quotaSortTeamRatioValue(
-                            self.teamRelativeToPlusMultiplier,
-                            absoluteTeamWeight: self.teamAbsoluteWeight
-                        )
-                    )
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
-                }
-
-                Slider(
-                    value: self.$teamRelativeToPlusMultiplier,
-                    in: CodexBarOpenAISettings.QuotaSortSettings.teamRelativeToPlusRange,
-                    step: 0.1
-                )
-            }
-        }
-    }
-}
-
-private struct OpenAISettingsSheet: View {
-    @ObservedObject private var store: TokenStore
-    @State private var popupAlertThresholdPercent: Double
-    @State private var usageDisplayMode: CodexBarUsageDisplayMode
-    @State private var plusRelativeWeight: Double
-    @State private var teamRelativeToPlusMultiplier: Double
-    @State private var preferredCodexAppPath: String?
-    @State private var autoRoutingPromptMode: CodexBarAutoRoutingPromptMode
-    @State private var validationMessage: String?
-
-    let codexAppPathPanelService: CodexAppPathPanelService
-    let onSave: (Double, CodexBarUsageDisplayMode, Double, Double, String?, CodexBarAutoRoutingPromptMode) -> Void
-    let onCancel: () -> Void
-
-    init(
-        store: TokenStore,
-        codexAppPathPanelService: CodexAppPathPanelService,
-        onSave: @escaping (Double, CodexBarUsageDisplayMode, Double, Double, String?, CodexBarAutoRoutingPromptMode) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
-        self._store = ObservedObject(wrappedValue: store)
-        self._popupAlertThresholdPercent = State(initialValue: store.config.openAI.popupAlertThresholdPercent)
-        self._usageDisplayMode = State(initialValue: store.config.openAI.usageDisplayMode)
-        self._plusRelativeWeight = State(initialValue: store.config.openAI.quotaSort.plusRelativeWeight)
-        self._teamRelativeToPlusMultiplier = State(initialValue: store.config.openAI.quotaSort.teamRelativeToPlusMultiplier)
-        self._preferredCodexAppPath = State(initialValue: store.config.desktop.preferredCodexAppPath)
-        self._autoRoutingPromptMode = State(initialValue: store.config.autoRouting.promptMode)
-        self.codexAppPathPanelService = codexAppPathPanelService
-        self.onSave = onSave
-        self.onCancel = onCancel
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L.settingsWindowTitle)
-                        .font(.system(size: 18, weight: .semibold))
-                    Text(L.settingsWindowHint)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-
-                UsageDisplayModeSettingsSection(
-                    usageDisplayMode: self.$usageDisplayMode
-                )
-
-                PopupAlertThresholdSettingsSection(
-                    popupAlertThresholdPercent: self.$popupAlertThresholdPercent
-                )
-
-                QuotaSortSettingsSection(
-                    plusRelativeWeight: self.$plusRelativeWeight,
-                    teamRelativeToPlusMultiplier: self.$teamRelativeToPlusMultiplier
-                )
-
-                AutoRoutingPromptModeSettingsSection(
-                    promptMode: self.$autoRoutingPromptMode
-                )
-
-                CodexAppPathSettingsSection(
-                    preferredCodexAppPath: self.$preferredCodexAppPath,
-                    validationMessage: self.$validationMessage,
-                    codexAppPathPanelService: self.codexAppPathPanelService
-                )
-
-                HStack {
-                    Spacer()
-
-                    Button(L.cancel, action: self.onCancel)
-                        .keyboardShortcut(.cancelAction)
-
-                    Button(L.save) {
-                        self.onSave(
-                            self.popupAlertThresholdPercent,
-                            self.usageDisplayMode,
-                            self.plusRelativeWeight,
-                            self.teamRelativeToPlusMultiplier,
-                            self.preferredCodexAppPath,
-                            self.autoRoutingPromptMode
-                        )
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
 }
 
 private struct AddProviderSheet: View {

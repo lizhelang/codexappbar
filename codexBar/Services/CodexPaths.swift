@@ -1,6 +1,9 @@
 import Foundation
 
 enum CodexPaths {
+    private static let stateSQLiteDefaultVersion = 5
+    private static let logsSQLiteDefaultVersion = 2
+
     static var realHome: URL {
         if let override = ProcessInfo.processInfo.environment["CODEXBAR_HOME"],
            override.isEmpty == false {
@@ -24,8 +27,18 @@ enum CodexPaths {
     static var tokenPoolURL: URL { self.codexRoot.appendingPathComponent("token_pool.json") }
     static var configTomlURL: URL { self.codexRoot.appendingPathComponent("config.toml") }
     static var providerSecretsURL: URL { self.codexRoot.appendingPathComponent("provider-secrets.env") }
-    static var stateSQLiteURL: URL { self.codexRoot.appendingPathComponent("state_5.sqlite") }
-    static var logsSQLiteURL: URL { self.codexRoot.appendingPathComponent("logs_1.sqlite") }
+    static var stateSQLiteURL: URL {
+        self.versionedSQLiteURL(
+            basename: "state",
+            defaultVersion: self.stateSQLiteDefaultVersion
+        )
+    }
+    static var logsSQLiteURL: URL {
+        self.versionedSQLiteURL(
+            basename: "logs",
+            defaultVersion: self.logsSQLiteDefaultVersion
+        )
+    }
     static var oauthFlowsDirectoryURL: URL { self.codexBarRoot.appendingPathComponent("oauth-flows", isDirectory: true) }
 
     static var barConfigURL: URL { self.codexBarRoot.appendingPathComponent("config.json") }
@@ -73,5 +86,38 @@ enum CodexPaths {
         try FileManager.default.setAttributes([
             .posixPermissions: NSNumber(value: Int16(0o600)),
         ], ofItemAtPath: url.path)
+    }
+
+    private static func versionedSQLiteURL(
+        basename: String,
+        defaultVersion: Int
+    ) -> URL {
+        let version = self.latestSQLiteVersion(basename: basename) ?? defaultVersion
+        return self.codexRoot.appendingPathComponent("\(basename)_\(version).sqlite")
+    }
+
+    private static func latestSQLiteVersion(basename: String) -> Int? {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: self.codexRoot,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        let prefix = "\(basename)_"
+        return urls.compactMap { url -> Int? in
+            guard url.pathExtension == "sqlite" else { return nil }
+            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]),
+                  values.isRegularFile == true else {
+                return nil
+            }
+
+            let filename = url.deletingPathExtension().lastPathComponent
+            guard filename.hasPrefix(prefix) else { return nil }
+            let suffix = String(filename.dropFirst(prefix.count))
+            return Int(suffix)
+        }
+        .max()
     }
 }

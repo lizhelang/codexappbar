@@ -1,0 +1,286 @@
+import Combine
+import Foundation
+
+protocol SettingsSaveRequestApplying {
+    func applySettingsSaveRequests(_ requests: SettingsSaveRequests) throws
+}
+
+extension TokenStore: SettingsSaveRequestApplying {
+    func applySettingsSaveRequests(_ requests: SettingsSaveRequests) throws {
+        try self.saveSettings(requests)
+    }
+}
+
+enum SettingsPage: String, CaseIterable, Identifiable {
+    case accounts
+    case usage
+    case codexAppPath
+    case recommendationPrompt
+
+    var id: String { self.rawValue }
+}
+
+struct SettingsWindowDraft: Equatable {
+    var accountOrder: [String]
+    var accountOrderingMode: CodexBarOpenAIAccountOrderingMode
+    var manualActivationBehavior: CodexBarOpenAIManualActivationBehavior
+    var popupAlertThresholdPercent: Double
+    var usageDisplayMode: CodexBarUsageDisplayMode
+    var plusRelativeWeight: Double
+    var teamRelativeToPlusMultiplier: Double
+    var preferredCodexAppPath: String?
+    var autoRoutingPromptMode: CodexBarAutoRoutingPromptMode
+
+    init(config: CodexBarConfig, accounts: [TokenAccount]) {
+        self.accountOrder = Self.normalizedAccountOrder(
+            config.openAI.accountOrder,
+            availableAccountIDs: accounts.map(\.accountId)
+        )
+        self.accountOrderingMode = config.openAI.accountOrderingMode
+        self.manualActivationBehavior = config.openAI.manualActivationBehavior
+        self.popupAlertThresholdPercent = config.openAI.popupAlertThresholdPercent
+        self.usageDisplayMode = config.openAI.usageDisplayMode
+        self.plusRelativeWeight = config.openAI.quotaSort.plusRelativeWeight
+        self.teamRelativeToPlusMultiplier = config.openAI.quotaSort.teamRelativeToPlusMultiplier
+        self.preferredCodexAppPath = config.desktop.preferredCodexAppPath
+        self.autoRoutingPromptMode = config.autoRouting.promptMode
+    }
+
+    static func mergedAccountOrder(
+        preferredAccountOrder: [String],
+        fallbackAccountOrder: [String],
+        availableAccountIDs: [String]
+    ) -> [String] {
+        self.normalizedAccountOrder(
+            preferredAccountOrder + fallbackAccountOrder,
+            availableAccountIDs: availableAccountIDs
+        )
+    }
+
+    private static func normalizedAccountOrder(_ accountOrder: [String], availableAccountIDs: [String]) -> [String] {
+        let availableSet = Set(availableAccountIDs)
+        var normalized: [String] = []
+        var seen: Set<String> = []
+
+        for accountID in accountOrder where availableSet.contains(accountID) {
+            guard seen.insert(accountID).inserted else { continue }
+            normalized.append(accountID)
+        }
+
+        for accountID in availableAccountIDs where seen.insert(accountID).inserted {
+            normalized.append(accountID)
+        }
+
+        return normalized
+    }
+}
+
+struct SettingsOpenAIAccountOrderItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let detail: String
+}
+
+enum SettingsDirtyField: Hashable {
+    case accountOrder
+    case accountOrderingMode
+    case manualActivationBehavior
+    case popupAlertThresholdPercent
+    case usageDisplayMode
+    case plusRelativeWeight
+    case teamRelativeToPlusMultiplier
+    case preferredCodexAppPath
+    case autoRoutingPromptMode
+}
+
+@MainActor
+final class SettingsWindowCoordinator: ObservableObject {
+    @Published var selectedPage: SettingsPage
+    @Published var draft: SettingsWindowDraft
+    @Published var validationMessage: String?
+
+    private var accounts: [TokenAccount]
+    private var baseline: SettingsWindowDraft
+    private var dirtyFields: Set<SettingsDirtyField> = []
+
+    init(
+        config: CodexBarConfig,
+        accounts: [TokenAccount],
+        selectedPage: SettingsPage = .accounts
+    ) {
+        let draft = SettingsWindowDraft(config: config, accounts: accounts)
+        self.selectedPage = selectedPage
+        self.draft = draft
+        self.accounts = accounts
+        self.baseline = draft
+        self.validationMessage = nil
+    }
+
+    var hasChanges: Bool {
+        self.makeSaveRequests().isEmpty == false
+    }
+
+    var orderedAccounts: [SettingsOpenAIAccountOrderItem] {
+        let accountByID = Dictionary(uniqueKeysWithValues: self.accounts.map { ($0.accountId, $0) })
+        return self.draft.accountOrder.compactMap { accountID in
+            guard let account = accountByID[accountID] else { return nil }
+            return SettingsOpenAIAccountOrderItem(
+                id: accountID,
+                title: Self.accountTitle(for: account),
+                detail: Self.accountDetail(for: account)
+            )
+        }
+    }
+
+    func moveAccount(accountID: String, offset: Int) {
+        guard let currentIndex = self.draft.accountOrder.firstIndex(of: accountID) else { return }
+        let targetIndex = currentIndex + offset
+        guard self.draft.accountOrder.indices.contains(targetIndex) else { return }
+        self.draft.accountOrder.swapAt(currentIndex, targetIndex)
+        self.dirtyFields.insert(.accountOrder)
+    }
+
+    func setAccountOrder(_ accountOrder: [String]) {
+        self.draft.accountOrder = accountOrder
+        self.dirtyFields.insert(.accountOrder)
+    }
+
+    func update<Value>(
+        _ keyPath: WritableKeyPath<SettingsWindowDraft, Value>,
+        to value: Value,
+        field: SettingsDirtyField
+    ) {
+        self.draft[keyPath: keyPath] = value
+        self.dirtyFields.insert(field)
+    }
+
+    func saveAndClose(
+        using sink: SettingsSaveRequestApplying,
+        onClose: () -> Void
+    ) {
+        do {
+            _ = try self.save(using: sink)
+            onClose()
+        } catch {
+            self.validationMessage = error.localizedDescription
+        }
+    }
+
+    func save(using sink: SettingsSaveRequestApplying) throws -> SettingsSaveRequests {
+        let requests = self.makeSaveRequests()
+        guard requests.isEmpty == false else { return requests }
+        try sink.applySettingsSaveRequests(requests)
+        self.baseline = self.draft
+        self.dirtyFields.removeAll()
+        self.validationMessage = nil
+        return requests
+    }
+
+    func cancelAndClose(onClose: () -> Void) {
+        self.cancel()
+        onClose()
+    }
+
+    func cancel() {
+        self.draft = self.baseline
+        self.dirtyFields.removeAll()
+        self.validationMessage = nil
+    }
+
+    func reconcileExternalState(config: CodexBarConfig, accounts: [TokenAccount]) {
+        let previousBaseline = self.baseline
+        let externalDraft = SettingsWindowDraft(config: config, accounts: accounts)
+        self.accounts = accounts
+
+        if self.dirtyFields.contains(.accountOrder) == false {
+            self.draft.accountOrder = externalDraft.accountOrder
+        } else {
+            self.draft.accountOrder = SettingsWindowDraft.mergedAccountOrder(
+                preferredAccountOrder: self.draft.accountOrder,
+                fallbackAccountOrder: externalDraft.accountOrder,
+                availableAccountIDs: accounts.map(\.accountId)
+            )
+        }
+        self.baseline.accountOrder = externalDraft.accountOrder
+
+        self.reconcile(\.accountOrderingMode, externalValue: externalDraft.accountOrderingMode, field: .accountOrderingMode)
+        self.reconcile(\.manualActivationBehavior, externalValue: externalDraft.manualActivationBehavior, field: .manualActivationBehavior)
+        self.reconcile(\.popupAlertThresholdPercent, externalValue: externalDraft.popupAlertThresholdPercent, field: .popupAlertThresholdPercent)
+        self.reconcile(\.usageDisplayMode, externalValue: externalDraft.usageDisplayMode, field: .usageDisplayMode)
+        self.reconcile(\.plusRelativeWeight, externalValue: externalDraft.plusRelativeWeight, field: .plusRelativeWeight)
+        self.reconcile(\.teamRelativeToPlusMultiplier, externalValue: externalDraft.teamRelativeToPlusMultiplier, field: .teamRelativeToPlusMultiplier)
+        self.reconcile(\.preferredCodexAppPath, externalValue: externalDraft.preferredCodexAppPath, field: .preferredCodexAppPath)
+        self.reconcile(\.autoRoutingPromptMode, externalValue: externalDraft.autoRoutingPromptMode, field: .autoRoutingPromptMode)
+    }
+
+    func makeSaveRequests() -> SettingsSaveRequests {
+        var requests = SettingsSaveRequests()
+
+        if self.draft.accountOrder != self.baseline.accountOrder ||
+            self.draft.accountOrderingMode != self.baseline.accountOrderingMode ||
+            self.draft.manualActivationBehavior != self.baseline.manualActivationBehavior {
+            requests.openAIAccount = OpenAIAccountSettingsUpdate(
+                accountOrder: self.draft.accountOrder,
+                accountOrderingMode: self.draft.accountOrderingMode,
+                manualActivationBehavior: self.draft.manualActivationBehavior
+            )
+        }
+
+        if self.draft.popupAlertThresholdPercent != self.baseline.popupAlertThresholdPercent ||
+            self.draft.usageDisplayMode != self.baseline.usageDisplayMode ||
+            self.draft.plusRelativeWeight != self.baseline.plusRelativeWeight ||
+            self.draft.teamRelativeToPlusMultiplier != self.baseline.teamRelativeToPlusMultiplier {
+            requests.openAIUsage = OpenAIUsageSettingsUpdate(
+                popupAlertThresholdPercent: self.draft.popupAlertThresholdPercent,
+                usageDisplayMode: self.draft.usageDisplayMode,
+                plusRelativeWeight: self.draft.plusRelativeWeight,
+                teamRelativeToPlusMultiplier: self.draft.teamRelativeToPlusMultiplier
+            )
+        }
+
+        if self.draft.preferredCodexAppPath != self.baseline.preferredCodexAppPath {
+            requests.desktop = DesktopSettingsUpdate(
+                preferredCodexAppPath: self.draft.preferredCodexAppPath
+            )
+        }
+
+        if self.draft.autoRoutingPromptMode != self.baseline.autoRoutingPromptMode {
+            requests.autoRoutingPrompt = AutoRoutingPromptSettingsUpdate(
+                promptMode: self.draft.autoRoutingPromptMode
+            )
+        }
+
+        return requests
+    }
+
+    private static func accountTitle(for account: TokenAccount) -> String {
+        if let organizationName = account.organizationName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           organizationName.isEmpty == false {
+            return organizationName
+        }
+        if account.email.isEmpty == false {
+            return account.email
+        }
+        return account.accountId
+    }
+
+    private static func accountDetail(for account: TokenAccount) -> String {
+        if let organizationName = account.organizationName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           organizationName.isEmpty == false,
+           account.email.isEmpty == false {
+            return account.email
+        }
+        return account.accountId
+    }
+
+    private func reconcile<Value: Equatable>(
+        _ keyPath: WritableKeyPath<SettingsWindowDraft, Value>,
+        externalValue: Value,
+        field: SettingsDirtyField
+    ) {
+        if self.dirtyFields.contains(field) == false {
+            self.draft[keyPath: keyPath] = externalValue
+        }
+        self.baseline[keyPath: keyPath] = externalValue
+    }
+}

@@ -55,9 +55,13 @@ enum L {
     static var settingsWindowTitle: String { self.settings }
     static var settingsWindowHint: String {
         zh
-            ? "调整 OpenAI 的显示、用量排序参数和阈值提醒；底部是自动切换推荐弹窗与 Codex.app 路径。"
-            : "Adjust OpenAI display, quota-sorting parameters, and threshold alerts. Auto-switch prompts and the Codex.app path are at the bottom."
+            ? "左侧切换账户、用量、Codex App 路径和弹窗推荐设置。窗口内的修改会先保存在草稿里，点击保存后再统一生效。"
+            : "Use the sidebar to switch between account, usage, Codex App path, and recommendation prompt settings. Changes stay in a window draft until you save."
     }
+    static var settingsAccountsPageTitle: String { zh ? "账户设置" : "Account Settings" }
+    static var settingsUsagePageTitle: String { zh ? "用量设置" : "Usage Settings" }
+    static var settingsCodexAppPathPageTitle: String { zh ? "Codex App 路径设置" : "Codex App Path" }
+    static var settingsRecommendationPageTitle: String { zh ? "弹窗推荐设置" : "Recommendation Prompt Settings" }
     static var usageDisplayModeTitle: String { zh ? "用量显示方式" : "Usage Display" }
     static var remainingUsageDisplay: String { zh ? "剩余用量" : "Remaining Quota" }
     static var usedQuotaDisplay: String { zh ? "已用额度" : "Used Quota" }
@@ -91,12 +95,47 @@ enum L {
     }
     static var popupAlertDisabled: String { zh ? "已关闭" : "Off" }
     static var accountOrderTitle: String { zh ? "OpenAI 账号顺序" : "OpenAI Account Order" }
+    static var accountOrderingModeTitle: String { zh ? "账号排序方式" : "Account Ordering" }
+    static var accountOrderingModeHint: String {
+        zh
+            ? "可在“按用量排序”和“按手动顺序”之间切换。只有切到手动顺序时，下面的手动排序才会影响主菜单展示。"
+            : "Switch between quota-based sorting and manual order. The manual list below only affects the main menu when manual order is selected."
+    }
+    static var accountOrderingModeQuotaSort: String { zh ? "按用量排序" : "Sort by Quota" }
+    static var accountOrderingModeQuotaSortHint: String {
+        zh ? "直接按当前用量权重排序，剩余可用更多的账号优先。" : "Use the current quota-weighted ranking directly, with accounts that have more usable quota first."
+    }
+    static var accountOrderingModeManual: String { zh ? "按手动顺序" : "Manual Order" }
+    static var accountOrderingModeManualHint: String {
+        zh ? "按你保存的手动顺序展示；active / running 账号仍会临时浮顶。" : "Use your saved manual order for display; active and running accounts still float to the top temporarily."
+    }
     static var accountOrderHint: String {
-        zh ? "保存后会优先按手动顺序显示；主弹窗里仍会按邮箱分组展示，这里控制组间顺序和组内账号顺序。" : "Saved manual order takes priority. The main popup still groups accounts by email, so this controls group order and account order within each group."
+        zh
+            ? "这里定义手动顺序。只有在上方选了“按手动顺序”后它才生效；active / running 账号仍会临时浮顶。"
+            : "This defines the manual order. It only takes effect when \"Manual Order\" is selected above, and active/running accounts still float to the top."
+    }
+    static var accountOrderInactiveHint: String {
+        zh ? "当前按用量排序；你仍可预先调整手动顺序，等切到“按手动顺序”后再生效。" : "Quota sorting is currently active. You can still prepare the manual order below, and it will apply once you switch to Manual Order."
     }
     static var noOpenAIAccountsForOrdering: String { zh ? "当前没有可排序的 OpenAI 账号。" : "There are no OpenAI accounts to reorder." }
     static var moveUp: String { zh ? "上移" : "Move Up" }
     static var moveDown: String { zh ? "下移" : "Move Down" }
+    static var manualActivationBehaviorTitle: String { zh ? "手动点击 OpenAI 账号时" : "When Manually Clicking an OpenAI Account" }
+    static var manualActivationBehaviorHint: String {
+        zh
+            ? "只影响 OpenAI OAuth 账号的手动点击。它不会影响自动推荐弹窗，也不会扩展到 custom provider。"
+            : "This only affects manual clicks on OpenAI OAuth accounts. It does not affect auto-routing recommendation prompts or custom providers."
+    }
+    static var manualActivationUpdateConfigOnly: String { zh ? "仅修改配置" : "Update Config Only" }
+    static var manualActivationUpdateConfigOnlyHint: String {
+        zh ? "仅切换当前 active account 并同步配置，本次不新开 Codex 实例。" : "Switch the active account and sync config without launching a new Codex instance."
+    }
+    static var manualActivationLaunchNewInstance: String { zh ? "新开实例" : "Launch New Instance" }
+    static var manualActivationLaunchNewInstanceHint: String {
+        zh ? "切换账号后立刻拉起一个新的 Codex App 实例。" : "Switch the account and immediately launch a new Codex App instance."
+    }
+    static var manualActivationUpdateConfigOnlyOneTime: String { zh ? "仅修改配置（本次）" : "Update Config Only (This Time)" }
+    static var manualActivationLaunchNewInstanceOneTime: String { zh ? "新开实例（本次）" : "Launch New Instance (This Time)" }
     static var save: String { zh ? "保存" : "Save" }
     static var codexAppPathTitle: String { zh ? "Codex.app 路径" : "Codex.app Path" }
     static var codexAppPathHint: String {
@@ -280,6 +319,12 @@ enum L {
     static var inUseNone: String       { zh ? "未检测到正在使用的 OpenAI 会话" : "No live OpenAI sessions detected" }
     static var runningThreadNone: String { zh ? "未检测到运行中的 OpenAI 线程" : "No running OpenAI threads detected" }
     static var runningThreadUnavailable: String { zh ? "运行中状态不可用" : "Running status unavailable" }
+    static var runningThreadUnavailableRuntimeLogMissing: String {
+        zh ? "运行中状态不可用（未找到运行日志库）" : "Running status unavailable (runtime log database missing)"
+    }
+    static var runningThreadUnavailableRuntimeLogUninitialized: String {
+        zh ? "运行中状态不可用（运行日志库未初始化）" : "Running status unavailable (runtime logs not initialized)"
+    }
 
     static func inUseSessions(_ count: Int) -> String {
         zh ? "使用中 · \(count) 个会话" : "In Use · \(count) session\(count == 1 ? "" : "s")"

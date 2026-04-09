@@ -99,6 +99,49 @@ final class CodexThreadRuntimeStoreTests: CodexBarTestCase {
         XCTAssertEqual(snapshot.threads.map(\.threadID), ["thread-legacy"])
     }
 
+    func testLoadRunningThreadsPrefersNewestLogsDatabaseVersion() throws {
+        let now = self.date("2026-04-05T12:00:00Z")
+        try RuntimeSQLiteFixtureSupport.writeStateDatabase(
+            at: CodexPaths.stateSQLiteURL,
+            threads: [
+                .init(
+                    id: "thread-new-logs-db",
+                    source: "cli",
+                    cwd: "/repo/new-logs",
+                    title: "New logs db thread",
+                    createdAt: 1,
+                    updatedAt: 1
+                ),
+            ]
+        )
+
+        let staleLogsURL = CodexPaths.codexRoot.appendingPathComponent("logs_1.sqlite")
+        FileManager.default.createFile(atPath: staleLogsURL.path, contents: Data())
+
+        let newestLogsURL = CodexPaths.codexRoot.appendingPathComponent("logs_2.sqlite")
+        try RuntimeSQLiteFixtureSupport.writeLogsDatabase(
+            at: newestLogsURL,
+            logs: [
+                .init(
+                    threadID: "thread-new-logs-db",
+                    timestamp: 1_775_390_399,
+                    target: "log",
+                    body: "session_task.turn live"
+                ),
+            ]
+        )
+
+        let store = self.makeStore()
+        let snapshot = store.loadRunningThreads(
+            now: now,
+            recentActivityWindow: 5
+        )
+
+        XCTAssertNil(snapshot.unavailableReason)
+        XCTAssertEqual(snapshot.threads.map(\.threadID), ["thread-new-logs-db"])
+        XCTAssertEqual(CodexPaths.logsSQLiteURL.lastPathComponent, "logs_2.sqlite")
+    }
+
     func testLoadRunningThreadsReturnsUnavailableForIncompatibleLogsSchema() throws {
         let store = self.makeStore()
         try RuntimeSQLiteFixtureSupport.writeStateDatabase(
@@ -128,6 +171,39 @@ final class CodexThreadRuntimeStoreTests: CodexBarTestCase {
         guard case .incompatibleSchema = snapshot.unavailableReason else {
             return XCTFail("expected incompatible schema, got \(String(describing: snapshot.unavailableReason))")
         }
+        XCTAssertTrue(snapshot.threads.isEmpty)
+    }
+
+    func testLoadRunningThreadsReturnsUnavailableForMissingLogsTable() throws {
+        let store = self.makeStore()
+        try RuntimeSQLiteFixtureSupport.writeStateDatabase(
+            at: CodexPaths.stateSQLiteURL,
+            threads: [
+                .init(
+                    id: "thread-empty-logs-db",
+                    source: "cli",
+                    cwd: "/repo/empty",
+                    title: "Empty logs db thread",
+                    createdAt: 1,
+                    updatedAt: 1
+                ),
+            ]
+        )
+        FileManager.default.createFile(
+            atPath: CodexPaths.logsSQLiteURL.path,
+            contents: Data()
+        )
+
+        let snapshot = store.loadRunningThreads(
+            now: self.date("2026-04-05T12:00:00Z"),
+            recentActivityWindow: 5
+        )
+
+        guard case let .missingTable(database, table) = snapshot.unavailableReason else {
+            return XCTFail("expected missing table, got \(String(describing: snapshot.unavailableReason))")
+        }
+        XCTAssertEqual(database, CodexPaths.logsSQLiteURL.lastPathComponent)
+        XCTAssertEqual(table, "logs")
         XCTAssertTrue(snapshot.threads.isEmpty)
     }
 

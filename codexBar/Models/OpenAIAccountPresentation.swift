@@ -18,7 +18,16 @@ struct OpenAIAccountRowState: Equatable {
     }
 }
 
+struct OpenAIAccountContextActionState: Equatable {
+    let behavior: CodexBarOpenAIManualActivationBehavior
+    let trigger: OpenAIManualActivationTrigger
+    let title: String
+    let isDefault: Bool
+}
+
 enum OpenAIAccountPresentation {
+    static let primaryManualActivationTrigger: OpenAIManualActivationTrigger = .primaryTap
+
     static func rowState(
         for account: TokenAccount,
         attribution: OpenAILiveSessionAttribution,
@@ -48,6 +57,18 @@ enum OpenAIAccountPresentation {
     }
 
     static func runningThreadSummaryText(
+        attribution: OpenAIRunningThreadAttribution
+    ) -> String {
+        if attribution.summary.isUnavailable {
+            return self.runningThreadUnavailableText(
+                reason: attribution.unavailableReason
+            )
+        }
+
+        return self.runningThreadSummaryText(summary: attribution.summary)
+    }
+
+    static func runningThreadSummaryText(
         summary: OpenAIRunningThreadAttribution.Summary
     ) -> String {
         if summary.isUnavailable {
@@ -74,6 +95,43 @@ enum OpenAIAccountPresentation {
             isNextUseTarget: account.isActive,
             runningThreadCount: runningThreadCount
         )
+    }
+
+    private static func runningThreadUnavailableText(
+        reason: CodexThreadRuntimeStore.UnavailableReason?
+    ) -> String {
+        switch reason {
+        case let .missingDatabase(name) where self.isRuntimeLogsDatabase(name):
+            return L.runningThreadUnavailableRuntimeLogMissing
+        case let .missingTable(database, table)
+            where self.isRuntimeLogsDatabase(database) && table == "logs":
+            return L.runningThreadUnavailableRuntimeLogUninitialized
+        default:
+            return L.runningThreadUnavailable
+        }
+    }
+
+    private static func isRuntimeLogsDatabase(_ filename: String) -> Bool {
+        filename.hasPrefix("logs_") && filename.hasSuffix(".sqlite")
+    }
+
+    static func manualActivationContextActions(
+        defaultBehavior: CodexBarOpenAIManualActivationBehavior
+    ) -> [OpenAIAccountContextActionState] {
+        [
+            OpenAIAccountContextActionState(
+                behavior: .updateConfigOnly,
+                trigger: .contextOverride(.updateConfigOnly),
+                title: L.manualActivationUpdateConfigOnlyOneTime,
+                isDefault: defaultBehavior == .updateConfigOnly
+            ),
+            OpenAIAccountContextActionState(
+                behavior: .launchNewInstance,
+                trigger: .contextOverride(.launchNewInstance),
+                title: L.manualActivationLaunchNewInstanceOneTime,
+                isDefault: defaultBehavior == .launchNewInstance
+            ),
+        ]
     }
 
     static func inUseSummaryText(

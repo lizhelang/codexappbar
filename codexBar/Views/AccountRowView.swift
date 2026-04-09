@@ -3,22 +3,15 @@ import SwiftUI
 /// One org/account row under an email group
 struct AccountRowView: View {
     let account: TokenAccount
-    let isNextUseTarget: Bool
-    let runningThreadCount: Int
+    let rowState: OpenAIAccountRowState
     let isRefreshing: Bool
     let popupAlertThresholdPercent: Double
     let usageDisplayMode: CodexBarUsageDisplayMode
-    let onActivate: () -> Void
+    let defaultManualActivationBehavior: CodexBarOpenAIManualActivationBehavior?
+    let onActivate: (OpenAIManualActivationTrigger) -> Void
     let onRefresh: () -> Void
     let onReauth: () -> Void
     let onDelete: () -> Void
-
-    private var rowState: OpenAIAccountRowState {
-        OpenAIAccountRowState(
-            isNextUseTarget: self.isNextUseTarget,
-            runningThreadCount: self.runningThreadCount
-        )
-    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -46,7 +39,7 @@ struct AccountRowView: View {
                     .cornerRadius(4)
             }
 
-            if isNextUseTarget {
+            if self.rowState.isNextUseTarget {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.accentColor)
                     .font(.system(size: 10))
@@ -94,7 +87,9 @@ struct AccountRowView: View {
                 .disabled(isRefreshing)
 
                 if rowState.showsUseAction {
-                    Button(rowState.useActionTitle, action: onActivate)
+                    Button(rowState.useActionTitle) {
+                        onActivate(OpenAIAccountPresentation.primaryManualActivationTrigger)
+                    }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.mini)
                         .font(.system(size: 10, weight: .medium))
@@ -113,11 +108,32 @@ struct AccountRowView: View {
                 .strokeBorder(rowBorderColor, lineWidth: 0.6)
         }
         .overlay(alignment: .leading) {
-            if isNextUseTarget {
+            if self.rowState.isNextUseTarget {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Color.accentColor)
                     .frame(width: 3)
                     .padding(.vertical, 4)
+            }
+        }
+        .contextMenu {
+            if let defaultManualActivationBehavior,
+               rowState.showsUseAction {
+                ForEach(
+                    OpenAIAccountPresentation.manualActivationContextActions(
+                        defaultBehavior: defaultManualActivationBehavior
+                    ),
+                    id: \.behavior
+                ) { action in
+                    Button {
+                        onActivate(action.trigger)
+                    } label: {
+                        if action.isDefault {
+                            Label(action.title, systemImage: "checkmark")
+                        } else {
+                            Text(action.title)
+                        }
+                    }
+                }
             }
         }
     }
@@ -155,7 +171,7 @@ struct AccountRowView: View {
     }
 
     private var rowBackgroundColor: Color {
-        if isNextUseTarget { return Color.accentColor.opacity(0.14) }
+        if self.rowState.isNextUseTarget { return Color.accentColor.opacity(0.14) }
         if account.isBanned { return Color.red.opacity(0.045) }
         if account.quotaExhausted { return Color.orange.opacity(0.05) }
         if account.isBelowPopupAlertThreshold(self.popupAlertThresholdPercent) {
@@ -165,7 +181,7 @@ struct AccountRowView: View {
     }
 
     private var rowBorderColor: Color {
-        if isNextUseTarget { return Color.accentColor.opacity(0.28) }
+        if self.rowState.isNextUseTarget { return Color.accentColor.opacity(0.28) }
         if account.isBanned { return Color.red.opacity(0.12) }
         if account.quotaExhausted { return Color.orange.opacity(0.14) }
         if account.isBelowPopupAlertThreshold(self.popupAlertThresholdPercent) {

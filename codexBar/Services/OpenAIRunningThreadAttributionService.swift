@@ -57,13 +57,15 @@ struct OpenAIRunningThreadAttribution: Equatable {
         threads: [],
         summary: .empty,
         recentActivityWindow: CodexThreadRuntimeStore.defaultRecentActivityWindow,
-        diagnosticMessage: nil
+        diagnosticMessage: nil,
+        unavailableReason: nil
     )
 
     let threads: [ThreadAttribution]
     let summary: Summary
     let recentActivityWindow: TimeInterval
     let diagnosticMessage: String?
+    let unavailableReason: CodexThreadRuntimeStore.UnavailableReason?
 }
 
 struct OpenAIRunningThreadAttributionService {
@@ -97,7 +99,8 @@ struct OpenAIRunningThreadAttributionService {
                 threads: [],
                 summary: .unavailable,
                 recentActivityWindow: runtimeSnapshot.recentActivityWindow,
-                diagnosticMessage: unavailableReason.diagnosticMessage
+                diagnosticMessage: unavailableReason.diagnosticMessage,
+                unavailableReason: unavailableReason
             )
         }
 
@@ -138,7 +141,8 @@ struct OpenAIRunningThreadAttributionService {
                 unknownThreadCount: unknownThreadCount
             ),
             recentActivityWindow: runtimeSnapshot.recentActivityWindow,
-            diagnosticMessage: nil
+            diagnosticMessage: nil,
+            unavailableReason: nil
         )
     }
 

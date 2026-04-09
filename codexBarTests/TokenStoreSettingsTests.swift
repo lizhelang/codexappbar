@@ -1,0 +1,107 @@
+import Foundation
+import XCTest
+
+@MainActor
+final class TokenStoreSettingsTests: CodexBarTestCase {
+    func testSaveOpenAIAccountSettingsWritesAccountOrderModeAndManualActivationBehavior() throws {
+        let store = TokenStore.shared
+        store.load()
+        store.addOrUpdate(try self.makeOAuthAccount(accountID: "acct_alpha", email: "alpha@example.com"))
+        store.addOrUpdate(try self.makeOAuthAccount(accountID: "acct_beta", email: "beta@example.com"))
+
+        try store.saveOpenAIAccountSettings(
+            OpenAIAccountSettingsUpdate(
+                accountOrder: ["acct_beta", "acct_alpha"],
+                accountOrderingMode: .manual,
+                manualActivationBehavior: .launchNewInstance
+            )
+        )
+
+        XCTAssertEqual(store.config.openAI.accountOrder, ["acct_beta", "acct_alpha"])
+        XCTAssertEqual(store.config.openAI.accountOrderingMode, .manual)
+        XCTAssertEqual(store.config.openAI.manualActivationBehavior, .launchNewInstance)
+    }
+
+    func testSaveOpenAIUsageSettingsOnlyTouchesUsageFields() throws {
+        let store = TokenStore.shared
+        store.load()
+        store.addOrUpdate(try self.makeOAuthAccount(accountID: "acct_alpha", email: "alpha@example.com"))
+        try store.saveOpenAIAccountSettings(
+            OpenAIAccountSettingsUpdate(
+                accountOrder: ["acct_alpha"],
+                accountOrderingMode: .manual,
+                manualActivationBehavior: .launchNewInstance
+            )
+        )
+
+        try store.saveOpenAIUsageSettings(
+            OpenAIUsageSettingsUpdate(
+                popupAlertThresholdPercent: 35,
+                usageDisplayMode: .remaining,
+                plusRelativeWeight: 6,
+                teamRelativeToPlusMultiplier: 2
+            )
+        )
+
+        XCTAssertEqual(store.config.openAI.popupAlertThresholdPercent, 35)
+        XCTAssertEqual(store.config.openAI.usageDisplayMode, .remaining)
+        XCTAssertEqual(store.config.openAI.quotaSort.plusRelativeWeight, 6)
+        XCTAssertEqual(store.config.openAI.quotaSort.teamRelativeToPlusMultiplier, 2)
+        XCTAssertEqual(store.config.openAI.accountOrder, ["acct_alpha"])
+        XCTAssertEqual(store.config.openAI.accountOrderingMode, .manual)
+        XCTAssertEqual(store.config.openAI.manualActivationBehavior, .launchNewInstance)
+    }
+
+    func testSaveDesktopSettingsOnlyTouchesPreferredPath() throws {
+        let store = TokenStore.shared
+        store.load()
+        try store.saveOpenAIAccountSettings(
+            OpenAIAccountSettingsUpdate(
+                accountOrder: [],
+                accountOrderingMode: .quotaSort,
+                manualActivationBehavior: .launchNewInstance
+            )
+        )
+
+        let validAppURL = try self.makeValidCodexApp(named: "Test/Codex.app")
+        try store.saveDesktopSettings(
+            DesktopSettingsUpdate(preferredCodexAppPath: validAppURL.path)
+        )
+
+        XCTAssertEqual(store.config.desktop.preferredCodexAppPath, validAppURL.path)
+        XCTAssertEqual(store.config.openAI.accountOrderingMode, .quotaSort)
+        XCTAssertEqual(store.config.openAI.manualActivationBehavior, .launchNewInstance)
+        XCTAssertEqual(store.config.autoRouting.promptMode, .launchNewInstance)
+    }
+
+    func testSaveAutoRoutingPromptSettingsOnlyTouchesPromptMode() throws {
+        let store = TokenStore.shared
+        store.load()
+        try store.saveOpenAIAccountSettings(
+            OpenAIAccountSettingsUpdate(
+                accountOrder: [],
+                accountOrderingMode: .quotaSort,
+                manualActivationBehavior: .launchNewInstance
+            )
+        )
+
+        try store.saveAutoRoutingPromptSettings(
+            AutoRoutingPromptSettingsUpdate(promptMode: .remindOnly)
+        )
+
+        XCTAssertEqual(store.config.autoRouting.promptMode, .remindOnly)
+        XCTAssertEqual(store.config.openAI.accountOrderingMode, .quotaSort)
+        XCTAssertEqual(store.config.openAI.manualActivationBehavior, .launchNewInstance)
+        XCTAssertEqual(store.config.openAI.accountOrder, [])
+    }
+
+    private func makeValidCodexApp(named relativePath: String) throws -> URL {
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CODEXBAR_HOME"] ?? NSTemporaryDirectory())
+        let appURL = root.appendingPathComponent(relativePath)
+        let resourcesURL = appURL.appendingPathComponent("Contents/Resources", isDirectory: true)
+        try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+        let executableURL = resourcesURL.appendingPathComponent("codex")
+        try Data().write(to: executableURL)
+        return appURL
+    }
+}

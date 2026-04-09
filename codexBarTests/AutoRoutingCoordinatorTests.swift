@@ -29,6 +29,8 @@ final class AutoRoutingCoordinatorTests: CodexBarTestCase {
         XCTAssertEqual(config.openAI.quotaSort.plusRelativeWeight, 10)
         XCTAssertEqual(config.openAI.quotaSort.teamRelativeToPlusMultiplier, 1.5)
         XCTAssertEqual(config.openAI.accountOrder, [])
+        XCTAssertEqual(config.openAI.accountOrderingMode, .quotaSort)
+        XCTAssertEqual(config.openAI.manualActivationBehavior, .updateConfigOnly)
     }
 
     func testConfigDecodesLegacyNestedSectionsWithoutNewFields() throws {
@@ -65,23 +67,31 @@ final class AutoRoutingCoordinatorTests: CodexBarTestCase {
         XCTAssertEqual(config.openAI.usageDisplayMode, .used)
         XCTAssertEqual(config.openAI.quotaSort.plusRelativeWeight, 10)
         XCTAssertEqual(config.openAI.quotaSort.teamRelativeToPlusMultiplier, 1.5)
+        XCTAssertEqual(config.openAI.accountOrderingMode, .quotaSort)
+        XCTAssertEqual(config.openAI.manualActivationBehavior, .updateConfigOnly)
         XCTAssertNil(config.desktop.preferredCodexAppPath)
     }
 
+    func testPreferredDisplayAccountOrderOnlyAppliesInManualMode() {
+        var settings = CodexBarOpenAISettings(
+            accountOrder: ["acct_b", "acct_a"],
+            accountOrderingMode: .quotaSort
+        )
+
+        XCTAssertEqual(settings.preferredDisplayAccountOrder, [])
+
+        settings.accountOrderingMode = .manual
+        XCTAssertEqual(settings.preferredDisplayAccountOrder, ["acct_b", "acct_a"])
+    }
+
     @MainActor
-    func testSaveDesktopAndOpenAISettingsRejectsInvalidCodexAppPath() throws {
+    func testSaveDesktopSettingsRejectsInvalidCodexAppPath() throws {
         let invalidURL = try self.makeDirectory(named: "Invalid/Codex.app")
         TokenStore.shared.load()
 
         XCTAssertThrowsError(
-            try TokenStore.shared.saveDesktopAndOpenAISettings(
-                accountOrder: [],
-                popupAlertThresholdPercent: 20,
-                usageDisplayMode: .used,
-                plusRelativeWeight: 10,
-                teamRelativeToPlusMultiplier: 1.5,
-                preferredCodexAppPath: invalidURL.path,
-                autoRoutingPromptMode: .launchNewInstance
+            try TokenStore.shared.saveDesktopSettings(
+                DesktopSettingsUpdate(preferredCodexAppPath: invalidURL.path)
             )
         ) { error in
             XCTAssertEqual(

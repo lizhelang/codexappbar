@@ -1,6 +1,53 @@
 import Combine
 import Foundation
 
+struct OpenAIAccountSettingsUpdate: Equatable {
+    var accountOrder: [String]
+    var accountOrderingMode: CodexBarOpenAIAccountOrderingMode
+    var manualActivationBehavior: CodexBarOpenAIManualActivationBehavior
+}
+
+struct OpenAIUsageSettingsUpdate: Equatable {
+    var popupAlertThresholdPercent: Double
+    var usageDisplayMode: CodexBarUsageDisplayMode
+    var plusRelativeWeight: Double
+    var teamRelativeToPlusMultiplier: Double
+}
+
+struct DesktopSettingsUpdate: Equatable {
+    var preferredCodexAppPath: String?
+}
+
+struct AutoRoutingPromptSettingsUpdate: Equatable {
+    var promptMode: CodexBarAutoRoutingPromptMode
+}
+
+struct SettingsSaveRequests: Equatable {
+    var openAIAccount: OpenAIAccountSettingsUpdate?
+    var openAIUsage: OpenAIUsageSettingsUpdate?
+    var desktop: DesktopSettingsUpdate?
+    var autoRoutingPrompt: AutoRoutingPromptSettingsUpdate?
+
+    init(
+        openAIAccount: OpenAIAccountSettingsUpdate? = nil,
+        openAIUsage: OpenAIUsageSettingsUpdate? = nil,
+        desktop: DesktopSettingsUpdate? = nil,
+        autoRoutingPrompt: AutoRoutingPromptSettingsUpdate? = nil
+    ) {
+        self.openAIAccount = openAIAccount
+        self.openAIUsage = openAIUsage
+        self.desktop = desktop
+        self.autoRoutingPrompt = autoRoutingPrompt
+    }
+
+    var isEmpty: Bool {
+        self.openAIAccount == nil &&
+        self.openAIUsage == nil &&
+        self.desktop == nil &&
+        self.autoRoutingPrompt == nil
+    }
+}
+
 final class TokenStore: ObservableObject {
     static let shared = TokenStore()
 
@@ -231,33 +278,37 @@ final class TokenStore: ObservableObject {
         self.publishState()
     }
 
-    func saveDesktopAndOpenAISettings(
-        accountOrder: [String],
-        popupAlertThresholdPercent: Double,
-        usageDisplayMode: CodexBarUsageDisplayMode,
-        plusRelativeWeight: Double,
-        teamRelativeToPlusMultiplier: Double,
-        preferredCodexAppPath: String?,
-        autoRoutingPromptMode: CodexBarAutoRoutingPromptMode
-    ) throws {
-        self.config.setOpenAIAccountOrder(accountOrder)
-        self.config.openAI.popupAlertThresholdPercent = min(max(popupAlertThresholdPercent, 0), 100)
-        self.config.openAI.usageDisplayMode = usageDisplayMode
-        self.config.openAI.quotaSort = CodexBarOpenAISettings.QuotaSortSettings(
-            plusRelativeWeight: plusRelativeWeight,
-            teamRelativeToPlusMultiplier: teamRelativeToPlusMultiplier
+    func saveOpenAIAccountSettings(_ request: OpenAIAccountSettingsUpdate) throws {
+        try self.saveSettings(
+            SettingsSaveRequests(openAIAccount: request)
         )
-        let trimmedPreferredPath = preferredCodexAppPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmedPreferredPath.isEmpty {
-            self.config.desktop.preferredCodexAppPath = nil
-        } else if let validatedPath = CodexDesktopLaunchProbeService
-            .validatedPreferredCodexAppURL(from: trimmedPreferredPath)?
-            .path {
-            self.config.desktop.preferredCodexAppPath = validatedPath
-        } else {
-            throw TokenStoreError.invalidCodexAppPath
-        }
-        self.config.autoRouting.promptMode = autoRoutingPromptMode
+    }
+
+    func saveOpenAIUsageSettings(_ request: OpenAIUsageSettingsUpdate) throws {
+        try self.saveSettings(
+            SettingsSaveRequests(openAIUsage: request)
+        )
+    }
+
+    func saveDesktopSettings(_ request: DesktopSettingsUpdate) throws {
+        try self.saveSettings(
+            SettingsSaveRequests(desktop: request)
+        )
+    }
+
+    func saveAutoRoutingPromptSettings(_ request: AutoRoutingPromptSettingsUpdate) throws {
+        try self.saveSettings(
+            SettingsSaveRequests(autoRoutingPrompt: request)
+        )
+    }
+
+    func saveSettings(_ requests: SettingsSaveRequests) throws {
+        guard requests.isEmpty == false else { return }
+
+        var updatedConfig = self.config
+        try SettingsSaveRequestApplier.apply(requests, to: &updatedConfig)
+
+        self.config = updatedConfig
         try self.persist(syncCodex: false)
     }
 

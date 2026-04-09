@@ -110,6 +110,20 @@ enum CodexBarAutoRoutingPromptMode: String, Codable, CaseIterable, Identifiable 
 
 }
 
+enum CodexBarOpenAIManualActivationBehavior: String, Codable, CaseIterable, Identifiable {
+    case updateConfigOnly
+    case launchNewInstance
+
+    var id: String { self.rawValue }
+}
+
+enum CodexBarOpenAIAccountOrderingMode: String, Codable, CaseIterable, Identifiable {
+    case quotaSort
+    case manual
+
+    var id: String { self.rawValue }
+}
+
 struct CodexBarAutoRoutingSettings: Codable, Equatable {
     var enabled: Bool
     var urgentThresholdPercent: Double
@@ -219,12 +233,16 @@ struct CodexBarOpenAISettings: Codable, Equatable {
     }
 
     var accountOrder: [String]
+    var accountOrderingMode: CodexBarOpenAIAccountOrderingMode
+    var manualActivationBehavior: CodexBarOpenAIManualActivationBehavior
     var popupAlertThresholdPercent: Double
     var usageDisplayMode: CodexBarUsageDisplayMode
     var quotaSort: QuotaSortSettings
 
     enum CodingKeys: String, CodingKey {
         case accountOrder
+        case accountOrderingMode
+        case manualActivationBehavior
         case popupAlertThresholdPercent
         case usageDisplayMode
         case quotaSort
@@ -232,11 +250,15 @@ struct CodexBarOpenAISettings: Codable, Equatable {
 
     init(
         accountOrder: [String] = [],
+        accountOrderingMode: CodexBarOpenAIAccountOrderingMode = .quotaSort,
+        manualActivationBehavior: CodexBarOpenAIManualActivationBehavior = .updateConfigOnly,
         popupAlertThresholdPercent: Double = 20,
         usageDisplayMode: CodexBarUsageDisplayMode = .used,
         quotaSort: QuotaSortSettings = QuotaSortSettings()
     ) {
         self.accountOrder = accountOrder
+        self.accountOrderingMode = accountOrderingMode
+        self.manualActivationBehavior = manualActivationBehavior
         self.popupAlertThresholdPercent = popupAlertThresholdPercent
         self.usageDisplayMode = usageDisplayMode
         self.quotaSort = quotaSort
@@ -245,9 +267,21 @@ struct CodexBarOpenAISettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.accountOrder = try container.decodeIfPresent([String].self, forKey: .accountOrder) ?? []
+        self.accountOrderingMode = try container.decodeIfPresent(
+            CodexBarOpenAIAccountOrderingMode.self,
+            forKey: .accountOrderingMode
+        ) ?? .quotaSort
+        self.manualActivationBehavior = try container.decodeIfPresent(
+            CodexBarOpenAIManualActivationBehavior.self,
+            forKey: .manualActivationBehavior
+        ) ?? .updateConfigOnly
         self.popupAlertThresholdPercent = try container.decodeIfPresent(Double.self, forKey: .popupAlertThresholdPercent) ?? 20
         self.usageDisplayMode = try container.decodeIfPresent(CodexBarUsageDisplayMode.self, forKey: .usageDisplayMode) ?? .used
         self.quotaSort = try container.decodeIfPresent(QuotaSortSettings.self, forKey: .quotaSort) ?? QuotaSortSettings()
+    }
+
+    var preferredDisplayAccountOrder: [String] {
+        self.accountOrderingMode == .manual ? self.accountOrder : []
     }
 }
 
@@ -580,6 +614,14 @@ extension CodexBarConfig {
     mutating func setOpenAIAccountOrder(_ accountOrder: [String]) {
         self.openAI.accountOrder = Self.uniqueAccountIDs(from: accountOrder)
         self.normalizeOpenAIAccountOrder()
+    }
+
+    mutating func setOpenAIManualActivationBehavior(_ behavior: CodexBarOpenAIManualActivationBehavior) {
+        self.openAI.manualActivationBehavior = behavior
+    }
+
+    mutating func setOpenAIAccountOrderingMode(_ mode: CodexBarOpenAIAccountOrderingMode) {
+        self.openAI.accountOrderingMode = mode
     }
 
     mutating func removeOpenAIAccountOrder(accountID: String) {

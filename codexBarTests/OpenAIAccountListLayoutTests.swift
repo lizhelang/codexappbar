@@ -263,7 +263,7 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
         XCTAssertEqual(grouped.map(\.email), ["usable@example.com", "weekly@example.com"])
     }
 
-    func testActiveAccountDoesNotOverrideQuotaSorting() {
+    func testActiveAccountFloatsIntoPrioritizedBand() {
         let activeLowerQuota = makeAccount(
             email: "active@example.com",
             accountId: "acct_active",
@@ -280,7 +280,7 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
 
         let grouped = OpenAIAccountListLayout.groupedAccounts(from: [activeLowerQuota, inactiveHigherQuota])
 
-        XCTAssertEqual(grouped.map(\.email), ["inactive@example.com", "active@example.com"])
+        XCTAssertEqual(grouped.map(\.email), ["active@example.com", "inactive@example.com"])
     }
 
     func testGroupsAreRankedByBestAccount() {
@@ -394,7 +394,7 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
         ])
     }
 
-    func testPreferredAccountOrderDoesNotOverrideQuotaSortingAcrossGroups() {
+    func testPreferredAccountOrderDefinesBaseOrderAcrossGroups() {
         let healthy = makeAccount(
             email: "healthy@example.com",
             accountId: "acct_healthy",
@@ -413,10 +413,10 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
             preferredAccountOrder: ["acct_manual", "acct_healthy"]
         )
 
-        XCTAssertEqual(grouped.map(\.email), ["healthy@example.com", "manual@example.com"])
+        XCTAssertEqual(grouped.map(\.email), ["manual@example.com", "healthy@example.com"])
     }
 
-    func testPreferredAccountOrderDoesNotOverrideQuotaSortingForUnlistedAccounts() {
+    func testPreferredAccountOrderKeepsUnlistedAccountsOnQuotaFallback() {
         let listed = makeAccount(
             email: "listed@example.com",
             accountId: "acct_listed",
@@ -435,7 +435,44 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
             preferredAccountOrder: ["acct_listed"]
         )
 
-        XCTAssertEqual(grouped.map(\.email), ["better@example.com", "listed@example.com"])
+        XCTAssertEqual(grouped.map(\.email), ["listed@example.com", "better@example.com"])
+    }
+
+    func testDisplaySortingKeepsPrioritizedAccountsInTopBandBeforePreferredBaseOrder() {
+        let running = makeAccount(
+            email: "running@example.com",
+            accountId: "acct_running",
+            primaryUsedPercent: 70,
+            secondaryUsedPercent: 10
+        )
+        let manualTop = makeAccount(
+            email: "manual@example.com",
+            accountId: "acct_manual",
+            primaryUsedPercent: 80,
+            secondaryUsedPercent: 20
+        )
+        let healthierFallback = makeAccount(
+            email: "fallback@example.com",
+            accountId: "acct_fallback",
+            primaryUsedPercent: 5,
+            secondaryUsedPercent: 5
+        )
+        let summary = OpenAIRunningThreadAttribution.Summary(
+            availability: .available,
+            runningThreadCounts: ["acct_running": 1],
+            unknownThreadCount: 0
+        )
+
+        let grouped = OpenAIAccountListLayout.groupedAccounts(
+            from: [healthierFallback, manualTop, running],
+            summary: summary,
+            preferredAccountOrder: ["acct_manual"]
+        )
+
+        XCTAssertEqual(
+            grouped.map(\.email),
+            ["running@example.com", "manual@example.com", "fallback@example.com"]
+        )
     }
 
     private func makeAccount(

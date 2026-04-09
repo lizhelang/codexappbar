@@ -29,6 +29,7 @@ struct CodexThreadRuntimeStore {
 
     enum UnavailableReason: Error, Equatable {
         case missingDatabase(name: String)
+        case missingTable(database: String, table: String)
         case incompatibleSchema(message: String)
         case queryFailed(message: String)
 
@@ -36,6 +37,8 @@ struct CodexThreadRuntimeStore {
             switch self {
             case let .missingDatabase(name):
                 return "missing runtime database: \(name)"
+            case let .missingTable(database, table):
+                return "runtime database missing table: \(database).\(table)"
             case let .incompatibleSchema(message):
                 return "runtime database schema incompatible: \(message)"
             case let .queryFailed(message):
@@ -149,6 +152,11 @@ struct CodexThreadRuntimeStore {
 
     private func loadRuntimeLogMatches(since lowerBoundTimestamp: Int64) throws -> [String: Int64] {
         try self.withReadConnection(at: self.logsDBURL) { db in
+            try self.requireTable(
+                "logs",
+                in: db,
+                databaseName: self.logsDBURL.lastPathComponent
+            )
             let availableColumns = try self.tableColumns(in: db, table: "logs")
             try self.validateRequiredColumns(
                 availableColumns,
@@ -275,6 +283,11 @@ struct CodexThreadRuntimeStore {
         requiredColumns: Set<String>,
         databaseName: String
     ) throws {
+        try self.requireTable(
+            table,
+            in: database,
+            databaseName: databaseName
+        )
         let availableColumns = try self.tableColumns(in: database, table: table)
         try self.validateRequiredColumns(
             availableColumns,
@@ -282,6 +295,19 @@ struct CodexThreadRuntimeStore {
             databaseName: databaseName,
             table: table
         )
+    }
+
+    private func requireTable(
+        _ table: String,
+        in database: OpaquePointer,
+        databaseName: String
+    ) throws {
+        guard try self.tableExists(named: table, in: database) else {
+            throw UnavailableReason.missingTable(
+                database: databaseName,
+                table: table
+            )
+        }
     }
 
     private func validateRequiredColumns(
@@ -313,6 +339,31 @@ struct CodexThreadRuntimeStore {
         }
 
         return ResolvedLogsSchema(timestampColumn: timestampColumn, bodyColumn: bodyColumn)
+    }
+
+    private func tableExists(named table: String, in database: OpaquePointer) throws -> Bool {
+        let statement = try SQLiteStatement(
+            database: database,
+            sql: """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            LIMIT 1
+            """
+        )
+        try statement.bindText(table, at: 1)
+
+        let stepResult = sqlite3_step(statement.handle)
+        switch stepResult {
+        case SQLITE_ROW:
+            return true
+        case SQLITE_DONE:
+            return false
+        default:
+            throw UnavailableReason.queryFailed(
+                message: "failed checking sqlite_master for table \(table) (\(stepResult))"
+            )
+        }
     }
 
     private func tableColumns(in database: OpaquePointer, table: String) throws -> Set<String> {
