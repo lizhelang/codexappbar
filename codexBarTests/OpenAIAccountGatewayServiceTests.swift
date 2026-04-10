@@ -193,7 +193,7 @@ final class OpenAIAccountGatewayServiceTests: CodexBarTestCase {
                         "Content-Type: application/json",
                         "Authorization: Bearer \(OpenAIAccountGatewayConfiguration.apiKey)",
                         "chatgpt-account-id: local-placeholder",
-                        "x-client-request-id: \(stickyKey)",
+                        "session_id: \(stickyKey)",
                         "Content-Length: \(Data(body.utf8).count)",
                         "Connection: close",
                     ],
