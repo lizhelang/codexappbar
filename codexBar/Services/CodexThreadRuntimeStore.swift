@@ -94,17 +94,17 @@ struct CodexThreadRuntimeStore {
         .init(target: "codex_otel.trace_safe", bodySubstrings: ["session_task.turn"]),
     ]
 
-    private let stateDBURL: URL
-    private let logsDBURL: URL
+    private let stateDBURLProvider: () -> URL
+    private let logsDBURLProvider: () -> URL
     private let fileManager: FileManager
 
     init(
-        stateDBURL: URL = CodexPaths.stateSQLiteURL,
-        logsDBURL: URL = CodexPaths.logsSQLiteURL,
+        stateDBURL: @autoclosure @escaping () -> URL = CodexPaths.stateSQLiteURL,
+        logsDBURL: @autoclosure @escaping () -> URL = CodexPaths.logsSQLiteURL,
         fileManager: FileManager = .default
     ) {
-        self.stateDBURL = stateDBURL
-        self.logsDBURL = logsDBURL
+        self.stateDBURLProvider = stateDBURL
+        self.logsDBURLProvider = logsDBURL
         self.fileManager = fileManager
     }
 
@@ -113,18 +113,27 @@ struct CodexThreadRuntimeStore {
         recentActivityWindow: TimeInterval = Self.defaultRecentActivityWindow
     ) -> Snapshot {
         let sanitizedWindow = max(0, recentActivityWindow)
+        // Codex may rotate versioned sqlite filenames while codexbar stays alive.
+        let stateDBURL = self.stateDBURLProvider()
+        let logsDBURL = self.logsDBURLProvider()
 
         do {
-            try self.requireDatabase(at: self.stateDBURL)
-            try self.requireDatabase(at: self.logsDBURL)
+            try self.requireDatabase(at: stateDBURL)
+            try self.requireDatabase(at: logsDBURL)
 
             let lowerBoundTimestamp = Int64(floor(now.timeIntervalSince1970 - sanitizedWindow))
-            let runtimeMatches = try self.loadRuntimeLogMatches(since: lowerBoundTimestamp)
+            let runtimeMatches = try self.loadRuntimeLogMatches(
+                since: lowerBoundTimestamp,
+                logsDBURL: logsDBURL
+            )
             guard runtimeMatches.isEmpty == false else {
                 return .available(threads: [], recentActivityWindow: sanitizedWindow)
             }
 
-            let threads = try self.loadThreads(matching: runtimeMatches)
+            let threads = try self.loadThreads(
+                matching: runtimeMatches,
+                stateDBURL: stateDBURL
+            )
             return .available(
                 threads: threads.sorted {
                     if $0.lastRuntimeAt != $1.lastRuntimeAt {
@@ -150,23 +159,26 @@ struct CodexThreadRuntimeStore {
         }
     }
 
-    private func loadRuntimeLogMatches(since lowerBoundTimestamp: Int64) throws -> [String: Int64] {
-        try self.withReadConnection(at: self.logsDBURL) { db in
+    private func loadRuntimeLogMatches(
+        since lowerBoundTimestamp: Int64,
+        logsDBURL: URL
+    ) throws -> [String: Int64] {
+        try self.withReadConnection(at: logsDBURL) { db in
             try self.requireTable(
                 "logs",
                 in: db,
-                databaseName: self.logsDBURL.lastPathComponent
+                databaseName: logsDBURL.lastPathComponent
             )
             let availableColumns = try self.tableColumns(in: db, table: "logs")
             try self.validateRequiredColumns(
                 availableColumns,
                 requiredColumns: ["thread_id", "target"],
-                databaseName: self.logsDBURL.lastPathComponent,
+                databaseName: logsDBURL.lastPathComponent,
                 table: "logs"
             )
             let resolvedSchema = try self.resolveLogsSchema(
                 availableColumns: availableColumns,
-                databaseName: self.logsDBURL.lastPathComponent
+                databaseName: logsDBURL.lastPathComponent
             )
 
             let sql = """
@@ -200,16 +212,19 @@ struct CodexThreadRuntimeStore {
         }
     }
 
-    private func loadThreads(matching runtimeMatches: [String: Int64]) throws -> [RuntimeThread] {
+    private func loadThreads(
+        matching runtimeMatches: [String: Int64],
+        stateDBURL: URL
+    ) throws -> [RuntimeThread] {
         let threadIDs = runtimeMatches.keys.sorted()
         guard threadIDs.isEmpty == false else { return [] }
 
-        return try self.withReadConnection(at: self.stateDBURL) { db in
+        return try self.withReadConnection(at: stateDBURL) { db in
             try self.validateSchema(
                 in: db,
                 table: "threads",
                 requiredColumns: ["id", "source", "cwd", "title", "archived"],
-                databaseName: self.stateDBURL.lastPathComponent
+                databaseName: stateDBURL.lastPathComponent
             )
 
             let placeholders = Array(repeating: "?", count: threadIDs.count).joined(separator: ", ")

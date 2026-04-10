@@ -142,6 +142,55 @@ final class CodexThreadRuntimeStoreTests: CodexBarTestCase {
         XCTAssertEqual(CodexPaths.logsSQLiteURL.lastPathComponent, "logs_2.sqlite")
     }
 
+    func testLoadRunningThreadsRefreshesResolvedLogsDatabaseBetweenLoads() throws {
+        let now = self.date("2026-04-05T12:00:00Z")
+        try RuntimeSQLiteFixtureSupport.writeStateDatabase(
+            at: CodexPaths.stateSQLiteURL,
+            threads: [
+                .init(
+                    id: "thread-rotated-logs-db",
+                    source: "cli",
+                    cwd: "/repo/rotated",
+                    title: "Rotated logs db thread",
+                    createdAt: 1,
+                    updatedAt: 1
+                ),
+            ]
+        )
+
+        let originalLogsURL = CodexPaths.codexRoot.appendingPathComponent("logs_2.sqlite")
+        try RuntimeSQLiteFixtureSupport.writeLogsDatabase(
+            at: originalLogsURL,
+            logs: []
+        )
+
+        let store = CodexThreadRuntimeStore()
+
+        try FileManager.default.removeItem(at: originalLogsURL)
+
+        let rotatedLogsURL = CodexPaths.codexRoot.appendingPathComponent("logs_3.sqlite")
+        try RuntimeSQLiteFixtureSupport.writeLogsDatabase(
+            at: rotatedLogsURL,
+            logs: [
+                .init(
+                    threadID: "thread-rotated-logs-db",
+                    timestamp: 1_775_390_399,
+                    target: "log",
+                    body: "session_task.turn live"
+                ),
+            ]
+        )
+
+        let snapshot = store.loadRunningThreads(
+            now: now,
+            recentActivityWindow: 5
+        )
+
+        XCTAssertNil(snapshot.unavailableReason)
+        XCTAssertEqual(snapshot.threads.map(\.threadID), ["thread-rotated-logs-db"])
+        XCTAssertEqual(CodexPaths.logsSQLiteURL.lastPathComponent, "logs_3.sqlite")
+    }
+
     func testLoadRunningThreadsReturnsUnavailableForIncompatibleLogsSchema() throws {
         let store = self.makeStore()
         try RuntimeSQLiteFixtureSupport.writeStateDatabase(
