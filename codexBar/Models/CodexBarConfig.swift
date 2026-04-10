@@ -86,6 +86,13 @@ enum CodexBarOpenAIManualActivationBehavior: String, Codable, CaseIterable, Iden
     var id: String { self.rawValue }
 }
 
+enum CodexBarOpenAIAccountUsageMode: String, Codable, CaseIterable, Identifiable {
+    case switchAccount = "switch"
+    case aggregateGateway = "aggregate_gateway"
+
+    var id: String { self.rawValue }
+}
+
 enum CodexBarOpenAIAccountOrderingMode: String, Codable, CaseIterable, Identifiable {
     case quotaSort
     case manual
@@ -138,6 +145,7 @@ struct CodexBarOpenAISettings: Codable, Equatable {
     }
 
     var accountOrder: [String]
+    var accountUsageMode: CodexBarOpenAIAccountUsageMode
     var accountOrderingMode: CodexBarOpenAIAccountOrderingMode
     var manualActivationBehavior: CodexBarOpenAIManualActivationBehavior
     var usageDisplayMode: CodexBarUsageDisplayMode
@@ -145,6 +153,7 @@ struct CodexBarOpenAISettings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case accountOrder
+        case accountUsageMode
         case accountOrderingMode
         case manualActivationBehavior
         case usageDisplayMode
@@ -153,12 +162,14 @@ struct CodexBarOpenAISettings: Codable, Equatable {
 
     init(
         accountOrder: [String] = [],
+        accountUsageMode: CodexBarOpenAIAccountUsageMode = .switchAccount,
         accountOrderingMode: CodexBarOpenAIAccountOrderingMode = .quotaSort,
         manualActivationBehavior: CodexBarOpenAIManualActivationBehavior = .updateConfigOnly,
         usageDisplayMode: CodexBarUsageDisplayMode = .used,
         quotaSort: QuotaSortSettings = QuotaSortSettings()
     ) {
         self.accountOrder = accountOrder
+        self.accountUsageMode = accountUsageMode
         self.accountOrderingMode = accountOrderingMode
         self.manualActivationBehavior = manualActivationBehavior
         self.usageDisplayMode = usageDisplayMode
@@ -168,6 +179,10 @@ struct CodexBarOpenAISettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.accountOrder = try container.decodeIfPresent([String].self, forKey: .accountOrder) ?? []
+        self.accountUsageMode = try container.decodeIfPresent(
+            CodexBarOpenAIAccountUsageMode.self,
+            forKey: .accountUsageMode
+        ) ?? .switchAccount
         self.accountOrderingMode = try container.decodeIfPresent(
             CodexBarOpenAIAccountOrderingMode.self,
             forKey: .accountOrderingMode
@@ -513,6 +528,10 @@ extension CodexBarConfig {
 
     mutating func setOpenAIManualActivationBehavior(_ behavior: CodexBarOpenAIManualActivationBehavior) {
         self.openAI.manualActivationBehavior = behavior
+    }
+
+    mutating func setOpenAIAccountUsageMode(_ mode: CodexBarOpenAIAccountUsageMode) {
+        self.openAI.accountUsageMode = mode
     }
 
     mutating func setOpenAIAccountOrderingMode(_ mode: CodexBarOpenAIAccountOrderingMode) {

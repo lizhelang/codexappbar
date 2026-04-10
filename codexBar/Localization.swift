@@ -170,6 +170,26 @@ enum L {
     }
     static var quotaSortPlusWeightTitle: String { zh ? "Plus 相对 Free 权重" : "Plus Weight vs Free" }
     static var quotaSortTeamRatioTitle: String { zh ? "Team 相对 Plus 倍数" : "Team Ratio vs Plus" }
+    static var accountUsageModeTitle: String { zh ? "账号使用模式" : "Account Usage Mode" }
+    static var accountUsageModeHint: String {
+        zh
+            ? "切换模式沿用当前逐账号生效方式；聚合模式会把 Codex 指向本地 gateway，并在后台按会话把请求路由到合适账号。"
+            : "Switch mode keeps the current per-account activation flow. Aggregate mode points Codex to a local gateway that routes sessions across your OpenAI accounts."
+    }
+    static var accountUsageModeAggregate: String { zh ? "聚合网关" : "Aggregate Gateway" }
+    static var accountUsageModeAggregateShort: String { zh ? "聚合" : "Aggregate" }
+    static var accountUsageModeAggregateHint: String {
+        zh
+            ? "OpenAI OAuth 账号会被当成一个本地账号池。Codex 连接本地 gateway，gateway 按会话粘性与 failover 规则挑选账号，不再依赖重启 Codex 才切号。"
+            : "Treat OpenAI OAuth accounts as one local pool. Codex talks to a local gateway, which applies session stickiness and failover instead of relying on process restarts to switch accounts."
+    }
+    static var accountUsageModeSwitch: String { zh ? "手动切换" : "Manual Switch" }
+    static var accountUsageModeSwitchShort: String { zh ? "切换" : "Switch" }
+    static var accountUsageModeSwitchHint: String {
+        zh
+            ? "保持当前行为：手动点账号后才切换，Codex 直接使用那个账号写入的 auth/config。"
+            : "Keep the current behavior: switching only happens when you explicitly choose an account, and Codex uses that account's synced auth/config directly."
+    }
     static func quotaSortPlusWeightValue(_ value: Double) -> String {
         let formatted = String(format: "%.1f", value)
         return zh ? "plus=\(formatted)" : "plus=\(formatted)"

@@ -3,9 +3,10 @@ import Foundation
 struct OpenAIAccountRowState: Equatable {
     let isNextUseTarget: Bool
     let runningThreadCount: Int
+    let accountUsageMode: CodexBarOpenAIAccountUsageMode
 
     var showsUseAction: Bool {
-        self.isNextUseTarget == false
+        self.accountUsageMode == .switchAccount && self.isNextUseTarget == false
     }
 
     var useActionTitle: String {
@@ -31,28 +32,37 @@ enum OpenAIAccountPresentation {
     static func rowState(
         for account: TokenAccount,
         attribution: OpenAILiveSessionAttribution,
+        accountUsageMode: CodexBarOpenAIAccountUsageMode,
         now: Date = Date()
-    ) -> OpenAIAccountRowState {
-        self.rowState(for: account, summary: attribution.liveSummary(now: now))
-    }
-
-    static func rowState(
-        for account: TokenAccount,
-        summary: OpenAILiveSessionAttribution.LiveSummary
     ) -> OpenAIAccountRowState {
         self.rowState(
             for: account,
-            runningThreadCount: summary.inUseSessionCount(for: account.accountId)
+            summary: attribution.liveSummary(now: now),
+            accountUsageMode: accountUsageMode
         )
     }
 
     static func rowState(
         for account: TokenAccount,
-        summary: OpenAIRunningThreadAttribution.Summary
+        summary: OpenAILiveSessionAttribution.LiveSummary,
+        accountUsageMode: CodexBarOpenAIAccountUsageMode
     ) -> OpenAIAccountRowState {
         self.rowState(
             for: account,
-            runningThreadCount: summary.runningThreadCount(for: account.accountId)
+            runningThreadCount: summary.inUseSessionCount(for: account.accountId),
+            accountUsageMode: accountUsageMode
+        )
+    }
+
+    static func rowState(
+        for account: TokenAccount,
+        summary: OpenAIRunningThreadAttribution.Summary,
+        accountUsageMode: CodexBarOpenAIAccountUsageMode
+    ) -> OpenAIAccountRowState {
+        self.rowState(
+            for: account,
+            runningThreadCount: summary.runningThreadCount(for: account.accountId),
+            accountUsageMode: accountUsageMode
         )
     }
 
@@ -89,11 +99,13 @@ enum OpenAIAccountPresentation {
 
     private static func rowState(
         for account: TokenAccount,
-        runningThreadCount: Int
+        runningThreadCount: Int,
+        accountUsageMode: CodexBarOpenAIAccountUsageMode
     ) -> OpenAIAccountRowState {
         OpenAIAccountRowState(
-            isNextUseTarget: account.isActive,
-            runningThreadCount: runningThreadCount
+            isNextUseTarget: accountUsageMode == .switchAccount && account.isActive,
+            runningThreadCount: runningThreadCount,
+            accountUsageMode: accountUsageMode
         )
     }
 

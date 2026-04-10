@@ -49,6 +49,8 @@ enum CodexPaths {
     static var managedLaunchBinURL: URL { self.managedLaunchRootURL.appendingPathComponent("bin", isDirectory: true) }
     static var managedLaunchHitsURL: URL { self.managedLaunchRootURL.appendingPathComponent("hits", isDirectory: true) }
     static var managedLaunchStateURL: URL { self.managedLaunchRootURL.appendingPathComponent("last-launch.json") }
+    static var openAIGatewayRootURL: URL { self.codexBarRoot.appendingPathComponent("openai-gateway", isDirectory: true) }
+    static var openAIGatewayStateURL: URL { self.openAIGatewayRootURL.appendingPathComponent("state.json") }
 
     static var configBackupURL: URL { self.codexRoot.appendingPathComponent("config.toml.bak-codexbar-last") }
     static var authBackupURL: URL { self.codexRoot.appendingPathComponent("auth.json.bak-codexbar-last") }
@@ -59,6 +61,7 @@ enum CodexPaths {
         try FileManager.default.createDirectory(at: self.oauthFlowsDirectoryURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: self.managedLaunchBinURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: self.managedLaunchHitsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: self.openAIGatewayRootURL, withIntermediateDirectories: true)
     }
 
     static func writeSecureFile(_ data: Data, to url: URL) throws {

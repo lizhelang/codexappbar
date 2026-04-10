@@ -302,7 +302,8 @@ struct MenuBarView: View {
             from: store.accounts,
             summary: self.runningThreadSummary,
             quotaSortSettings: self.store.config.openAI.quotaSort,
-            preferredAccountOrder: self.store.config.openAI.preferredDisplayAccountOrder
+            preferredAccountOrder: self.store.config.openAI.preferredDisplayAccountOrder,
+            highlightActiveAccount: self.store.config.openAI.accountUsageMode == .switchAccount
         )
     }
 
@@ -440,7 +441,7 @@ struct MenuBarView: View {
                let activeAccount = store.activeProviderAccount {
                 Divider()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(activeProvider.label) · \(activeAccount.label)")
+                    Text(self.activeProviderSummaryTitle(activeProvider: activeProvider, activeAccount: activeAccount))
                         .font(.system(size: 11, weight: .medium))
                     Text("Model: \(store.activeModel)")
                         .font(.system(size: 10))
@@ -649,22 +650,26 @@ struct MenuBarView: View {
 
                 Spacer()
 
-                Button("login") {
-                    startOAuthLogin()
+                HStack(spacing: 4) {
+                    ForEach(CodexBarOpenAIAccountUsageMode.allCases) { mode in
+                        Button(mode == .aggregateGateway ? L.accountUsageModeAggregateShort : L.accountUsageModeSwitchShort) {
+                            self.setOpenAIAccountUsageMode(mode)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.mini)
+                        .font(.system(size: 10, weight: .medium))
+                        .tint(self.store.config.openAI.accountUsageMode == mode ? .accentColor : .gray.opacity(0.35))
+                        .accessibilityIdentifier("codexbar.openai-mode.\(mode.rawValue)")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.mini)
-                .font(.system(size: 10, weight: .medium))
                 .padding(.trailing, 12)
-                .accessibilityLabel("login header button")
-                .accessibilityIdentifier("codexbar.login-openai.header")
             }
 
             if store.accounts.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No OpenAI account added.")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Login to track quota and switch OpenAI OAuth accounts.")
+                    Text("Use the toolbar plus button to add OpenAI OAuth accounts.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -766,7 +771,8 @@ struct MenuBarView: View {
                     ForEach(group.accounts) { account in
                         let rowState = OpenAIAccountPresentation.rowState(
                             for: account,
-                            summary: self.runningThreadSummary
+                            summary: self.runningThreadSummary,
+                            accountUsageMode: self.store.config.openAI.accountUsageMode
                         )
                         AccountRowView(
                             account: account,
@@ -955,6 +961,26 @@ struct MenuBarView: View {
         } catch {
             showError = error.localizedDescription
         }
+    }
+
+    private func setOpenAIAccountUsageMode(_ mode: CodexBarOpenAIAccountUsageMode) {
+        do {
+            try self.store.updateOpenAIAccountUsageMode(mode)
+            self.showError = nil
+        } catch {
+            self.showError = error.localizedDescription
+        }
+    }
+
+    private func activeProviderSummaryTitle(
+        activeProvider: CodexBarProvider,
+        activeAccount: CodexBarProviderAccount
+    ) -> String {
+        if activeProvider.kind == .openAIOAuth &&
+            self.store.config.openAI.accountUsageMode == .aggregateGateway {
+            return "\(activeProvider.label) · \(L.accountUsageModeAggregateShort)"
+        }
+        return "\(activeProvider.label) · \(activeAccount.label)"
     }
 
     private func deleteCompatibleAccount(providerID: String, accountID: String) {

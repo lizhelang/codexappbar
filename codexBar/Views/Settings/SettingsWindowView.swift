@@ -154,6 +154,13 @@ private struct SettingsAccountsPage: View {
             Text(SettingsPage.accounts.title)
                 .font(.system(size: 16, weight: .semibold))
 
+            SettingsAccountUsageModeSection(
+                mode: Binding(
+                    get: { self.coordinator.draft.accountUsageMode },
+                    set: { self.coordinator.update(\.accountUsageMode, to: $0, field: .accountUsageMode) }
+                )
+            )
+
             SettingsAccountOrderingModeSection(
                 mode: Binding(
                     get: { self.coordinator.draft.accountOrderingMode },
@@ -161,19 +168,21 @@ private struct SettingsAccountsPage: View {
                 )
             )
 
-            SettingsManualActivationBehaviorSection(
-                behavior: Binding(
-                    get: { self.coordinator.draft.manualActivationBehavior },
-                    set: { self.coordinator.update(\.manualActivationBehavior, to: $0, field: .manualActivationBehavior) }
-                ),
-                preferredCodexAppPath: Binding(
-                    get: { self.coordinator.draft.preferredCodexAppPath },
-                    set: { self.coordinator.update(\.preferredCodexAppPath, to: $0, field: .preferredCodexAppPath) }
-                ),
-                validationMessage: self.$coordinator.validationMessage,
-                codexAppPathPanelService: self.codexAppPathPanelService,
-                showsCodexAppPathSection: self.coordinator.showsCodexAppPathSection
-            )
+            if self.coordinator.showsManualActivationBehaviorSection {
+                SettingsManualActivationBehaviorSection(
+                    behavior: Binding(
+                        get: { self.coordinator.draft.manualActivationBehavior },
+                        set: { self.coordinator.update(\.manualActivationBehavior, to: $0, field: .manualActivationBehavior) }
+                    ),
+                    preferredCodexAppPath: Binding(
+                        get: { self.coordinator.draft.preferredCodexAppPath },
+                        set: { self.coordinator.update(\.preferredCodexAppPath, to: $0, field: .preferredCodexAppPath) }
+                    ),
+                    validationMessage: self.$coordinator.validationMessage,
+                    codexAppPathPanelService: self.codexAppPathPanelService,
+                    showsCodexAppPathSection: self.coordinator.showsCodexAppPathSection
+                )
+            }
 
             if self.coordinator.showsManualAccountOrderSection {
                 SettingsAccountOrderSection(coordinator: self.coordinator)
@@ -317,6 +326,56 @@ private struct SettingsUpdatesInfoRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.secondary.opacity(0.06))
         )
+    }
+}
+
+private struct SettingsAccountUsageModeSection: View {
+    @Binding var mode: CodexBarOpenAIAccountUsageMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L.accountUsageModeTitle)
+                .font(.system(size: 12, weight: .medium))
+
+            Text(L.accountUsageModeHint)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(CodexBarOpenAIAccountUsageMode.allCases) { option in
+                    Button {
+                        self.mode = option
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: self.mode == option ? "largecircle.fill.circle" : "circle")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(self.mode == option ? .accentColor : .secondary)
+                                .padding(.top, 2)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(option.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Text(option.detail)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(self.mode == option ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.06))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
 
@@ -702,6 +761,26 @@ private extension CodexBarOpenAIManualActivationBehavior {
             return L.manualActivationUpdateConfigOnlyHint
         case .launchNewInstance:
             return L.manualActivationLaunchNewInstanceHint
+        }
+    }
+}
+
+private extension CodexBarOpenAIAccountUsageMode {
+    var title: String {
+        switch self {
+        case .switchAccount:
+            return L.accountUsageModeSwitch
+        case .aggregateGateway:
+            return L.accountUsageModeAggregate
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .switchAccount:
+            return L.accountUsageModeSwitchHint
+        case .aggregateGateway:
+            return L.accountUsageModeAggregateHint
         }
     }
 }

@@ -6,17 +6,27 @@ struct codexBarApp: App {
     @StateObject private var store = TokenStore.shared
     @StateObject private var oauth = OAuthManager.shared
     @StateObject private var updateCoordinator = UpdateCoordinator.shared
+    @StateObject private var menuBarExtraVisibilityStore = MenuBarExtraVisibilityStore()
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: self.menuBarExtraInsertionBinding) {
             MenuBarView()
                 .environmentObject(store)
                 .environmentObject(oauth)
                 .environmentObject(updateCoordinator)
         } label: {
             MenuBarIconView(store: store, updateCoordinator: updateCoordinator)
+                .accessibilityLabel(Text("codexbar"))
+                .accessibilityIdentifier("codexbar.menubar-extra")
         }
         .menuBarExtraStyle(.window)
+    }
+
+    private var menuBarExtraInsertionBinding: Binding<Bool> {
+        Binding(
+            get: { self.menuBarExtraVisibilityStore.isInserted },
+            set: { self.menuBarExtraVisibilityStore.isInserted = $0 }
+        )
     }
 }
 
@@ -29,7 +39,12 @@ struct MenuBarIconView: View {
         HStack(spacing: 3) {
             Image(systemName: iconName)
                 .symbolRenderingMode(.hierarchical)
-            if let active = store.accounts.first(where: { $0.isActive }) {
+            if self.store.activeProvider?.kind == .openAIOAuth,
+               self.store.config.openAI.accountUsageMode == .aggregateGateway {
+                Text(L.accountUsageModeAggregateShort)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+            } else if let active = store.accounts.first(where: { $0.isActive }) {
                 if active.secondaryExhausted {
                     Text(L.weeklyLimit)
                         .font(.system(size: 10, weight: .semibold))

@@ -19,7 +19,8 @@ final class OpenAIAccountPresentationTests: XCTestCase {
 
         let state = OpenAIAccountPresentation.rowState(
             for: account,
-            summary: OpenAIRunningThreadAttribution.Summary.empty
+            summary: OpenAIRunningThreadAttribution.Summary.empty,
+            accountUsageMode: .switchAccount
         )
 
         XCTAssertTrue(state.showsUseAction)
@@ -32,7 +33,8 @@ final class OpenAIAccountPresentationTests: XCTestCase {
 
         let state = OpenAIAccountPresentation.rowState(
             for: account,
-            summary: OpenAIRunningThreadAttribution.Summary.empty
+            summary: OpenAIRunningThreadAttribution.Summary.empty,
+            accountUsageMode: .switchAccount
         )
 
         XCTAssertTrue(state.isNextUseTarget)
@@ -49,7 +51,8 @@ final class OpenAIAccountPresentationTests: XCTestCase {
 
         let state = OpenAIAccountPresentation.rowState(
             for: account,
-            summary: summary
+            summary: summary,
+            accountUsageMode: .switchAccount
         )
 
         XCTAssertEqual(state.runningThreadCount, 2)
@@ -66,7 +69,8 @@ final class OpenAIAccountPresentationTests: XCTestCase {
 
         let state = OpenAIAccountPresentation.rowState(
             for: account,
-            summary: summary
+            summary: summary,
+            accountUsageMode: .switchAccount
         )
 
         XCTAssertTrue(state.isNextUseTarget)
@@ -86,7 +90,8 @@ final class OpenAIAccountPresentationTests: XCTestCase {
 
         let state = OpenAIAccountPresentation.rowState(
             for: account,
-            summary: summary
+            summary: summary,
+            accountUsageMode: .switchAccount
         )
 
         XCTAssertEqual(state.runningThreadBadgeTitle, "运行 2")
@@ -97,7 +102,8 @@ final class OpenAIAccountPresentationTests: XCTestCase {
 
         let state = OpenAIAccountPresentation.rowState(
             for: account,
-            summary: .unavailable
+            summary: .unavailable,
+            accountUsageMode: .switchAccount
         )
         let summaryText = OpenAIAccountPresentation.runningThreadSummaryText(summary: .unavailable)
 
@@ -162,6 +168,19 @@ final class OpenAIAccountPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(actions.filter(\.isDefault).map(\.behavior), [.launchNewInstance])
+    }
+
+    func testAggregateModeHidesUseActionEvenWhenAccountIsStoredAsActive() {
+        let account = self.makeAccount(accountId: "acct_pool", isActive: true)
+
+        let state = OpenAIAccountPresentation.rowState(
+            for: account,
+            summary: .empty,
+            accountUsageMode: .aggregateGateway
+        )
+
+        XCTAssertFalse(state.isNextUseTarget)
+        XCTAssertFalse(state.showsUseAction)
     }
 
     private func makeAccount(accountId: String, isActive: Bool) -> TokenAccount {

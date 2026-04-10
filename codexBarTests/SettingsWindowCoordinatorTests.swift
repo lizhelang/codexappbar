@@ -96,6 +96,7 @@ final class SettingsWindowCoordinatorTests: XCTestCase {
             requests.openAIAccount,
             OpenAIAccountSettingsUpdate(
                 accountOrder: ["acct_beta", "acct_alpha"],
+                accountUsageMode: .switchAccount,
                 accountOrderingMode: .manual,
                 manualActivationBehavior: .launchNewInstance
             )
@@ -274,6 +275,7 @@ final class SettingsWindowCoordinatorTests: XCTestCase {
             coordinator.makeSaveRequests().openAIAccount,
             OpenAIAccountSettingsUpdate(
                 accountOrder: ["acct_alpha", "acct_beta"],
+                accountUsageMode: .switchAccount,
                 accountOrderingMode: .quotaSort,
                 manualActivationBehavior: .updateConfigOnly
             )

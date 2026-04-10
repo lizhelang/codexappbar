@@ -13,6 +13,7 @@ enum SettingsSaveRequestApplier {
     static func apply(_ request: OpenAIAccountSettingsUpdate?, to config: inout CodexBarConfig) {
         guard let request else { return }
         config.setOpenAIAccountOrder(request.accountOrder)
+        config.setOpenAIAccountUsageMode(request.accountUsageMode)
         config.setOpenAIAccountOrderingMode(request.accountOrderingMode)
         config.setOpenAIManualActivationBehavior(request.manualActivationBehavior)
     }

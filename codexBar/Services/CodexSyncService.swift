@@ -72,8 +72,9 @@ struct CodexSyncService: CodexSynchronizing {
         try self.backupFileIfPresent(CodexPaths.configTomlURL, CodexPaths.configBackupURL)
         try self.backupFileIfPresent(CodexPaths.authURL, CodexPaths.authBackupURL)
 
-        let authData = try self.renderAuthJSON(provider: provider, account: account)
+        let authData = try self.renderAuthJSON(config: config, provider: provider, account: account)
         let renderedToml = self.renderConfigTOML(
+            config: config,
             existingText: existingTomlText,
             global: config.global,
             provider: provider
@@ -98,10 +99,21 @@ struct CodexSyncService: CodexSynchronizing {
         }
     }
 
-    private func renderAuthJSON(provider: CodexBarProvider, account: CodexBarProviderAccount) throws -> Data {
+    private func renderAuthJSON(
+        config: CodexBarConfig,
+        provider: CodexBarProvider,
+        account: CodexBarProviderAccount
+    ) throws -> Data {
         let object: [String: Any]
         switch provider.kind {
         case .openAIOAuth:
+            if config.openAI.accountUsageMode == .aggregateGateway {
+                object = [
+                    "OPENAI_API_KEY": OpenAIAccountGatewayConfiguration.apiKey,
+                ]
+                break
+            }
+
             guard let accessToken = account.accessToken,
                   let refreshToken = account.refreshToken,
                   let idToken = account.idToken,
@@ -134,6 +146,7 @@ struct CodexSyncService: CodexSynchronizing {
     }
 
     private func renderConfigTOML(
+        config: CodexBarConfig,
         existingText: String,
         global: CodexBarGlobalSettings,
         provider: CodexBarProvider
@@ -154,7 +167,14 @@ struct CodexSyncService: CodexSynchronizing {
         text = self.removeBlock(text, key: "OpenAI")
         text = self.removeBlock(text, key: "openai")
 
-        if provider.kind == .openAICompatible, let baseURL = provider.baseURL {
+        if provider.kind == .openAIOAuth,
+           config.openAI.accountUsageMode == .aggregateGateway {
+            text = self.upsertSetting(
+                text,
+                key: "openai_base_url",
+                value: self.quote(OpenAIAccountGatewayConfiguration.baseURLString)
+            )
+        } else if provider.kind == .openAICompatible, let baseURL = provider.baseURL {
             text = self.upsertSetting(text, key: "openai_base_url", value: self.quote(baseURL))
         }
 

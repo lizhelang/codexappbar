@@ -53,6 +53,42 @@ final class CodexSyncServiceTests: CodexBarTestCase {
         XCTAssertEqual(try Data(contentsOf: CodexPaths.configTomlURL), originalToml)
     }
 
+    func testSynchronizeUsesLocalGatewayWhenAggregateModeIsEnabled() throws {
+        try CodexPaths.ensureDirectories()
+
+        let account = CodexBarProviderAccount(
+            id: "acct_pool",
+            kind: .oauthTokens,
+            label: "pool@example.com",
+            email: "pool@example.com",
+            openAIAccountId: "acct_pool",
+            accessToken: "access-pool",
+            refreshToken: "refresh-pool",
+            idToken: "id-pool"
+        )
+        let provider = CodexBarProvider(
+            id: "openai-oauth",
+            kind: .openAIOAuth,
+            label: "OpenAI",
+            activeAccountId: account.id,
+            accounts: [account]
+        )
+        let config = CodexBarConfig(
+            active: CodexBarActiveSelection(providerId: provider.id, accountId: account.id),
+            openAI: CodexBarOpenAISettings(accountUsageMode: .aggregateGateway),
+            providers: [provider]
+        )
+
+        try CodexSyncService().synchronize(config: config)
+
+        let authText = try String(contentsOf: CodexPaths.authURL, encoding: .utf8)
+        let tomlText = try String(contentsOf: CodexPaths.configTomlURL, encoding: .utf8)
+
+        XCTAssertTrue(authText.contains(#""OPENAI_API_KEY" : "codexbar-local-gateway""#))
+        XCTAssertFalse(authText.contains("access-pool"))
+        XCTAssertTrue(tomlText.contains(#"openai_base_url = "http://127.0.0.1:1456/v1""#))
+    }
+
     private enum SyncFailure: Error, Equatable {
         case configWriteFailed
     }

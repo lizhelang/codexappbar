@@ -283,6 +283,29 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
         XCTAssertEqual(grouped.map(\.email), ["active@example.com", "inactive@example.com"])
     }
 
+    func testAggregateModeCanDisableActiveAccountFloating() {
+        let activeLowerQuota = makeAccount(
+            email: "active@example.com",
+            accountId: "acct_active",
+            primaryUsedPercent: 75,
+            secondaryUsedPercent: 10,
+            isActive: true
+        )
+        let inactiveHigherQuota = makeAccount(
+            email: "inactive@example.com",
+            accountId: "acct_inactive",
+            primaryUsedPercent: 10,
+            secondaryUsedPercent: 10
+        )
+
+        let grouped = OpenAIAccountListLayout.groupedAccounts(
+            from: [activeLowerQuota, inactiveHigherQuota],
+            highlightActiveAccount: false
+        )
+
+        XCTAssertEqual(grouped.map(\.email), ["inactive@example.com", "active@example.com"])
+    }
+
     func testGroupsAreRankedByBestAccount() {
         let topGroupLow = makeAccount(
             email: "alpha@example.com",

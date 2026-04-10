@@ -24,6 +24,7 @@ final class CodexBarConfigCompatibilityTests: CodexBarTestCase {
         XCTAssertEqual(config.openAI.quotaSort.plusRelativeWeight, 10)
         XCTAssertEqual(config.openAI.quotaSort.teamRelativeToPlusMultiplier, 1.5)
         XCTAssertEqual(config.openAI.accountOrder, [])
+        XCTAssertEqual(config.openAI.accountUsageMode, .switchAccount)
         XCTAssertEqual(config.openAI.accountOrderingMode, .quotaSort)
         XCTAssertEqual(config.openAI.manualActivationBehavior, .updateConfigOnly)
     }
@@ -59,6 +60,7 @@ final class CodexBarConfigCompatibilityTests: CodexBarTestCase {
         XCTAssertEqual(config.openAI.usageDisplayMode, .used)
         XCTAssertEqual(config.openAI.quotaSort.plusRelativeWeight, 10)
         XCTAssertEqual(config.openAI.quotaSort.teamRelativeToPlusMultiplier, 1.5)
+        XCTAssertEqual(config.openAI.accountUsageMode, .switchAccount)
         XCTAssertEqual(config.openAI.accountOrderingMode, .quotaSort)
         XCTAssertEqual(config.openAI.manualActivationBehavior, .updateConfigOnly)
         XCTAssertNil(config.desktop.preferredCodexAppPath)

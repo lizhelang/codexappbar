@@ -34,13 +34,15 @@ enum OpenAIAccountListLayout {
     nonisolated static func groupedAccounts(
         from accounts: [TokenAccount],
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings = .init(),
-        preferredAccountOrder: [String] = []
+        preferredAccountOrder: [String] = [],
+        highlightActiveAccount: Bool = true
     ) -> [OpenAIAccountGroup] {
         self.groupedAccounts(
             from: accounts,
             prioritizedAccountIDs: [],
             quotaSortSettings: quotaSortSettings,
-            preferredAccountOrder: preferredAccountOrder
+            preferredAccountOrder: preferredAccountOrder,
+            highlightActiveAccount: highlightActiveAccount
         )
     }
 
@@ -49,13 +51,15 @@ enum OpenAIAccountListLayout {
         attribution: OpenAILiveSessionAttribution,
         now: Date = Date(),
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings = .init(),
-        preferredAccountOrder: [String] = []
+        preferredAccountOrder: [String] = [],
+        highlightActiveAccount: Bool = true
     ) -> [OpenAIAccountGroup] {
         self.groupedAccounts(
             from: accounts,
             prioritizedAccountIDs: Set(attribution.liveSummary(now: now).inUseSessionCounts.keys),
             quotaSortSettings: quotaSortSettings,
-            preferredAccountOrder: preferredAccountOrder
+            preferredAccountOrder: preferredAccountOrder,
+            highlightActiveAccount: highlightActiveAccount
         )
     }
 
@@ -63,13 +67,15 @@ enum OpenAIAccountListLayout {
         from accounts: [TokenAccount],
         attribution: OpenAIRunningThreadAttribution,
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings = .init(),
-        preferredAccountOrder: [String] = []
+        preferredAccountOrder: [String] = [],
+        highlightActiveAccount: Bool = true
     ) -> [OpenAIAccountGroup] {
         self.groupedAccounts(
             from: accounts,
             prioritizedAccountIDs: Set(attribution.summary.runningThreadCounts.keys),
             quotaSortSettings: quotaSortSettings,
-            preferredAccountOrder: preferredAccountOrder
+            preferredAccountOrder: preferredAccountOrder,
+            highlightActiveAccount: highlightActiveAccount
         )
     }
 
@@ -77,13 +83,15 @@ enum OpenAIAccountListLayout {
         from accounts: [TokenAccount],
         summary: OpenAIRunningThreadAttribution.Summary,
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings = .init(),
-        preferredAccountOrder: [String] = []
+        preferredAccountOrder: [String] = [],
+        highlightActiveAccount: Bool = true
     ) -> [OpenAIAccountGroup] {
         self.groupedAccounts(
             from: accounts,
             prioritizedAccountIDs: Set(summary.runningThreadCounts.keys),
             quotaSortSettings: quotaSortSettings,
-            preferredAccountOrder: preferredAccountOrder
+            preferredAccountOrder: preferredAccountOrder,
+            highlightActiveAccount: highlightActiveAccount
         )
     }
 
@@ -91,7 +99,8 @@ enum OpenAIAccountListLayout {
         from accounts: [TokenAccount],
         prioritizedAccountIDs: Set<String>,
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings,
-        preferredAccountOrder: [String]
+        preferredAccountOrder: [String],
+        highlightActiveAccount: Bool
     ) -> [OpenAIAccountGroup] {
         let preferredRanks = self.preferredAccountRanks(from: preferredAccountOrder)
         return Dictionary(grouping: accounts, by: \.email)
@@ -104,7 +113,8 @@ enum OpenAIAccountListLayout {
                             $1,
                             prioritizedAccountIDs: prioritizedAccountIDs,
                             quotaSortSettings: quotaSortSettings,
-                            preferredRanks: preferredRanks
+                            preferredRanks: preferredRanks,
+                            highlightActiveAccount: highlightActiveAccount
                         )
                     }
                 )
@@ -115,7 +125,8 @@ enum OpenAIAccountListLayout {
                     $1,
                     prioritizedAccountIDs: prioritizedAccountIDs,
                     quotaSortSettings: quotaSortSettings,
-                    preferredRanks: preferredRanks
+                    preferredRanks: preferredRanks,
+                    highlightActiveAccount: highlightActiveAccount
                 )
             }
     }
@@ -188,10 +199,19 @@ enum OpenAIAccountListLayout {
         _ rhs: TokenAccount,
         prioritizedAccountIDs: Set<String>,
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings,
-        preferredRanks: [String: Int]
+        preferredRanks: [String: Int],
+        highlightActiveAccount: Bool
     ) -> Bool {
-        let lhsPriority = self.displayPriority(for: lhs, prioritizedAccountIDs: prioritizedAccountIDs)
-        let rhsPriority = self.displayPriority(for: rhs, prioritizedAccountIDs: prioritizedAccountIDs)
+        let lhsPriority = self.displayPriority(
+            for: lhs,
+            prioritizedAccountIDs: prioritizedAccountIDs,
+            highlightActiveAccount: highlightActiveAccount
+        )
+        let rhsPriority = self.displayPriority(
+            for: rhs,
+            prioritizedAccountIDs: prioritizedAccountIDs,
+            highlightActiveAccount: highlightActiveAccount
+        )
         if lhsPriority != rhsPriority {
             return lhsPriority.rawValue < rhsPriority.rawValue
         }
@@ -213,9 +233,10 @@ enum OpenAIAccountListLayout {
 
     nonisolated private static func displayPriority(
         for account: TokenAccount,
-        prioritizedAccountIDs: Set<String>
+        prioritizedAccountIDs: Set<String>,
+        highlightActiveAccount: Bool
     ) -> OpenAIAccountDisplayPriority {
-        if account.isActive || prioritizedAccountIDs.contains(account.accountId) {
+        if (highlightActiveAccount && account.isActive) || prioritizedAccountIDs.contains(account.accountId) {
             return .prioritized
         }
         return .standard
@@ -226,7 +247,8 @@ enum OpenAIAccountListLayout {
         _ rhs: OpenAIAccountGroup,
         prioritizedAccountIDs: Set<String>,
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings,
-        preferredRanks: [String: Int]
+        preferredRanks: [String: Int],
+        highlightActiveAccount: Bool
     ) -> Bool {
         let lhsRepresentative = lhs.accounts.first
         let rhsRepresentative = rhs.accounts.first
@@ -238,7 +260,8 @@ enum OpenAIAccountListLayout {
                 rhsAccount,
                 prioritizedAccountIDs: prioritizedAccountIDs,
                 quotaSortSettings: quotaSortSettings,
-                preferredRanks: preferredRanks
+                preferredRanks: preferredRanks,
+                highlightActiveAccount: highlightActiveAccount
             ) {
                 return true
             }
@@ -247,7 +270,8 @@ enum OpenAIAccountListLayout {
                 lhsAccount,
                 prioritizedAccountIDs: prioritizedAccountIDs,
                 quotaSortSettings: quotaSortSettings,
-                preferredRanks: preferredRanks
+                preferredRanks: preferredRanks,
+                highlightActiveAccount: highlightActiveAccount
             ) {
                 return false
             }

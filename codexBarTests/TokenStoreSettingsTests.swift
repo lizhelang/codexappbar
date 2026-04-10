@@ -12,6 +12,7 @@ final class TokenStoreSettingsTests: CodexBarTestCase {
         try store.saveOpenAIAccountSettings(
             OpenAIAccountSettingsUpdate(
                 accountOrder: ["acct_beta", "acct_alpha"],
+                accountUsageMode: .switchAccount,
                 accountOrderingMode: .manual,
                 manualActivationBehavior: .launchNewInstance
             )
@@ -29,6 +30,7 @@ final class TokenStoreSettingsTests: CodexBarTestCase {
         try store.saveOpenAIAccountSettings(
             OpenAIAccountSettingsUpdate(
                 accountOrder: ["acct_alpha"],
+                accountUsageMode: .switchAccount,
                 accountOrderingMode: .manual,
                 manualActivationBehavior: .launchNewInstance
             )
@@ -56,6 +58,7 @@ final class TokenStoreSettingsTests: CodexBarTestCase {
         try store.saveOpenAIAccountSettings(
             OpenAIAccountSettingsUpdate(
                 accountOrder: [],
+                accountUsageMode: .switchAccount,
                 accountOrderingMode: .quotaSort,
                 manualActivationBehavior: .launchNewInstance
             )

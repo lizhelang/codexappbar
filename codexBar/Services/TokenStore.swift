@@ -3,6 +3,7 @@ import Foundation
 
 struct OpenAIAccountSettingsUpdate: Equatable {
     var accountOrder: [String]
+    var accountUsageMode: CodexBarOpenAIAccountUsageMode
     var accountOrderingMode: CodexBarOpenAIAccountOrderingMode
     var manualActivationBehavior: CodexBarOpenAIManualActivationBehavior
 }
@@ -50,6 +51,7 @@ final class TokenStore: ObservableObject {
     private let syncService = CodexSyncService()
     private let switchJournalStore = SwitchJournalStore()
     private let costSummaryService = LocalCostSummaryService()
+    private let openAIAccountGatewayService = OpenAIAccountGatewayService.shared
     private let refreshStateQueue = DispatchQueue(label: "lzl.codexbar.refresh-state")
     private let usageRefreshStateQueue = DispatchQueue(label: "lzl.codexbar.usage-refresh-state")
     private var isRefreshingLocalCostSummary = false
@@ -63,6 +65,7 @@ final class TokenStore: ObservableObject {
             self.config = CodexBarConfig()
         }
 
+        self.openAIAccountGatewayService.startIfNeeded()
         self.publishState()
         self.localCostSummary = self.loadCachedLocalCostSummary()
         self.seedSwitchJournalIfNeeded()
@@ -275,6 +278,19 @@ final class TokenStore: ObservableObject {
         )
     }
 
+    func updateOpenAIAccountUsageMode(_ mode: CodexBarOpenAIAccountUsageMode) throws {
+        guard self.config.openAI.accountUsageMode != mode else { return }
+
+        self.config.setOpenAIAccountUsageMode(mode)
+        if mode == .aggregateGateway,
+           let provider = self.oauthProvider() {
+            self.config.active.providerId = provider.id
+            self.config.active.accountId = provider.activeAccountId
+        }
+
+        try self.persist(syncCodex: mode == .aggregateGateway || self.config.active.providerId == self.oauthProvider()?.id)
+    }
+
     func saveOpenAIUsageSettings(_ request: OpenAIUsageSettingsUpdate) throws {
         try self.saveSettings(
             SettingsSaveRequests(openAIUsage: request)
@@ -290,11 +306,17 @@ final class TokenStore: ObservableObject {
     func saveSettings(_ requests: SettingsSaveRequests) throws {
         guard requests.isEmpty == false else { return }
 
+        let previousUsageMode = self.config.openAI.accountUsageMode
         var updatedConfig = self.config
         try SettingsSaveRequestApplier.apply(requests, to: &updatedConfig)
 
         self.config = updatedConfig
-        try self.persist(syncCodex: false)
+        let shouldSyncCodex = self.shouldSyncCodexAfterSavingSettings(
+            requests: requests,
+            previousUsageMode: previousUsageMode,
+            updatedConfig: updatedConfig
+        )
+        try self.persist(syncCodex: shouldSyncCodex)
     }
 
     func hasStaleOAuthUsageSnapshot(maxAge: TimeInterval, now: Date = Date()) -> Bool {
@@ -378,6 +400,11 @@ final class TokenStore: ObservableObject {
 
     private func publishState() {
         self.accounts = self.config.oauthTokenAccounts()
+        self.openAIAccountGatewayService.updateState(
+            accounts: self.accounts,
+            quotaSortSettings: self.config.openAI.quotaSort,
+            accountUsageMode: self.config.openAI.accountUsageMode
+        )
     }
 
     func refreshLocalCostSummary() {
@@ -456,6 +483,20 @@ final class TokenStore: ObservableObject {
             options: .regularExpression
         ).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return slug.isEmpty ? "provider-\(UUID().uuidString.lowercased())" : slug
+    }
+
+    private func shouldSyncCodexAfterSavingSettings(
+        requests: SettingsSaveRequests,
+        previousUsageMode: CodexBarOpenAIAccountUsageMode,
+        updatedConfig: CodexBarConfig
+    ) -> Bool {
+        guard let openAIAccountRequest = requests.openAIAccount else { return false }
+        let oauthProviderID = updatedConfig.oauthProvider()?.id
+        let openAIIsSelected = updatedConfig.active.providerId == oauthProviderID
+        if openAIAccountRequest.accountUsageMode != previousUsageMode {
+            return openAIIsSelected || openAIAccountRequest.accountUsageMode == .aggregateGateway
+        }
+        return false
     }
 }
 

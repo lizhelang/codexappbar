@@ -21,6 +21,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
 struct SettingsWindowDraft: Equatable {
     var accountOrder: [String]
+    var accountUsageMode: CodexBarOpenAIAccountUsageMode
     var accountOrderingMode: CodexBarOpenAIAccountOrderingMode
     var manualActivationBehavior: CodexBarOpenAIManualActivationBehavior
     var usageDisplayMode: CodexBarUsageDisplayMode
@@ -33,6 +34,7 @@ struct SettingsWindowDraft: Equatable {
             config.openAI.accountOrder,
             availableAccountIDs: accounts.map(\.accountId)
         )
+        self.accountUsageMode = config.openAI.accountUsageMode
         self.accountOrderingMode = config.openAI.accountOrderingMode
         self.manualActivationBehavior = config.openAI.manualActivationBehavior
         self.usageDisplayMode = config.openAI.usageDisplayMode
@@ -78,6 +80,7 @@ struct SettingsOpenAIAccountOrderItem: Identifiable, Equatable {
 
 enum SettingsDirtyField: Hashable {
     case accountOrder
+    case accountUsageMode
     case accountOrderingMode
     case manualActivationBehavior
     case usageDisplayMode
@@ -129,7 +132,12 @@ final class SettingsWindowCoordinator: ObservableObject {
         self.draft.accountOrderingMode == .manual
     }
 
+    var showsManualActivationBehaviorSection: Bool {
+        self.draft.accountUsageMode == .switchAccount
+    }
+
     var showsCodexAppPathSection: Bool {
+        self.showsManualActivationBehaviorSection &&
         self.draft.manualActivationBehavior == .launchNewInstance
     }
 
@@ -203,6 +211,7 @@ final class SettingsWindowCoordinator: ObservableObject {
         }
         self.baseline.accountOrder = externalDraft.accountOrder
 
+        self.reconcile(\.accountUsageMode, externalValue: externalDraft.accountUsageMode, field: .accountUsageMode)
         self.reconcile(\.accountOrderingMode, externalValue: externalDraft.accountOrderingMode, field: .accountOrderingMode)
         self.reconcile(\.manualActivationBehavior, externalValue: externalDraft.manualActivationBehavior, field: .manualActivationBehavior)
         self.reconcile(\.usageDisplayMode, externalValue: externalDraft.usageDisplayMode, field: .usageDisplayMode)
@@ -215,10 +224,12 @@ final class SettingsWindowCoordinator: ObservableObject {
         var requests = SettingsSaveRequests()
 
         if self.draft.accountOrder != self.baseline.accountOrder ||
+            self.draft.accountUsageMode != self.baseline.accountUsageMode ||
             self.draft.accountOrderingMode != self.baseline.accountOrderingMode ||
             self.draft.manualActivationBehavior != self.baseline.manualActivationBehavior {
             requests.openAIAccount = OpenAIAccountSettingsUpdate(
                 accountOrder: self.draft.accountOrder,
+                accountUsageMode: self.draft.accountUsageMode,
                 accountOrderingMode: self.draft.accountOrderingMode,
                 manualActivationBehavior: self.draft.manualActivationBehavior
             )
