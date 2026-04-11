@@ -7,6 +7,34 @@ final class SessionLogStore {
         let inputTokens: Int
         let cachedInputTokens: Int
         let outputTokens: Int
+
+        nonisolated static let zero = Usage(inputTokens: 0, cachedInputTokens: 0, outputTokens: 0)
+
+        nonisolated var totalTokens: Int {
+            self.inputTokens + self.outputTokens
+        }
+
+        nonisolated var isZero: Bool {
+            self.inputTokens == 0 &&
+            self.cachedInputTokens == 0 &&
+            self.outputTokens == 0
+        }
+
+        nonisolated static func +(lhs: Usage, rhs: Usage) -> Usage {
+            Usage(
+                inputTokens: lhs.inputTokens + rhs.inputTokens,
+                cachedInputTokens: lhs.cachedInputTokens + rhs.cachedInputTokens,
+                outputTokens: lhs.outputTokens + rhs.outputTokens
+            )
+        }
+
+        nonisolated func delta(from previous: Usage) -> Usage {
+            Usage(
+                inputTokens: max(0, self.inputTokens - previous.inputTokens),
+                cachedInputTokens: max(0, self.cachedInputTokens - previous.cachedInputTokens),
+                outputTokens: max(0, self.outputTokens - previous.outputTokens)
+            )
+        }
     }
 
     struct SessionRecord: Codable, Equatable {
@@ -18,6 +46,11 @@ final class SessionLogStore {
         let usage: Usage
     }
 
+    struct UsageEvent: Codable, Equatable {
+        let timestamp: Date
+        let usage: Usage
+    }
+
     private struct FileFingerprint: Codable, Equatable {
         let fileSize: Int
         let modificationDate: Date
@@ -26,6 +59,13 @@ final class SessionLogStore {
     private struct CachedSessionRecord: Codable {
         let fingerprint: FileFingerprint
         let record: SessionRecord?
+        let usageEvents: [UsageEvent]
+    }
+
+    private struct UsageSample {
+        let timestamp: Date?
+        let totalUsage: Usage
+        let incrementalUsage: Usage?
     }
 
     private struct PersistedCache: Codable {
@@ -37,9 +77,7 @@ final class SessionLogStore {
     private let codexRootURL: URL
     private let persistedCacheURL: URL
     private let queue = DispatchQueue(label: "lzl.codexbar.session-log-store", qos: .utility)
-    private let headerScanBytes = 4 * 1024
-    private let tailScanBytes = 32 * 1024
-    private let persistedCacheVersion = 2
+    private let persistedCacheVersion = 3
 
     private var sessionCache: [URL: CachedSessionRecord] = [:]
 
@@ -75,9 +113,36 @@ final class SessionLogStore {
         self.sessionRecords().filter { $0.isArchived == false }
     }
 
+    func reduceUsageEvents<Result>(
+        into initialResult: Result,
+        _ update: (inout Result, SessionRecord, UsageEvent) -> Void
+    ) -> Result {
+        self.queue.sync {
+            var result = initialResult
+            self.reduceCachedSessionsLocked(into: &result) { partialResult, cached in
+                guard let record = cached.record else { return }
+                for event in cached.usageEvents {
+                    update(&partialResult, record, event)
+                }
+            }
+            return result
+        }
+    }
+
     private func reduceSessionsLocked<Result>(
         into result: inout Result,
         _ update: (inout Result, SessionRecord) -> Void
+    ) {
+        self.reduceCachedSessionsLocked(into: &result) { partialResult, cached in
+            if let record = cached.record {
+                update(&partialResult, record)
+            }
+        }
+    }
+
+    private func reduceCachedSessionsLocked<Result>(
+        into result: inout Result,
+        _ update: (inout Result, CachedSessionRecord) -> Void
     ) {
         let files = self.sessionFiles()
         var nextSessionCache: [URL: CachedSessionRecord] = [:]
@@ -89,18 +154,13 @@ final class SessionLogStore {
 
                 if let cached = self.sessionCache[fileURL], cached.fingerprint == fingerprint {
                     nextSessionCache[fileURL] = cached
-                    if let record = cached.record {
-                        update(&result, record)
-                    }
+                    update(&result, cached)
                     return
                 }
 
-                let record = self.parseSession(fileURL, fingerprint: fingerprint)
-                let cached = CachedSessionRecord(fingerprint: fingerprint, record: record)
+                let cached = self.parseSession(fileURL, fingerprint: fingerprint)
                 nextSessionCache[fileURL] = cached
-                if let record {
-                    update(&result, record)
-                }
+                update(&result, cached)
             }
         }
 
@@ -138,87 +198,55 @@ final class SessionLogStore {
         )
     }
 
-    private func parseSession(_ fileURL: URL, fingerprint: FileFingerprint) -> SessionRecord? {
-        if let record = self.parseSessionFast(fileURL, fingerprint: fingerprint) {
-            return record
-        }
-        return self.parseSessionSlow(fileURL, fingerprint: fingerprint)
-    }
-
-    private func parseSessionFast(_ fileURL: URL, fingerprint: FileFingerprint) -> SessionRecord? {
+    private func parseSession(_ fileURL: URL, fingerprint: FileFingerprint) -> CachedSessionRecord {
         var sessionID: String?
         var sessionDate: Date?
         var model: String?
         var latestUsage: Usage?
-
-        if let headerLines = self.readLines(in: fileURL, maxBytes: self.headerScanBytes, fromEnd: false) {
-            for line in headerLines {
-                if sessionDate == nil {
-                    self.consumeSessionMetadata(in: line, sessionID: &sessionID, sessionDate: &sessionDate)
-                }
-                if model == nil {
-                    self.consumeTurnContext(in: line, model: &model)
-                }
-                if sessionDate != nil, model != nil {
-                    break
-                }
-            }
-        }
-
-        if let tailLines = self.readLines(in: fileURL, maxBytes: self.tailScanBytes, fromEnd: true) {
-            for line in tailLines.reversed() {
-                if latestUsage == nil {
-                    latestUsage = self.parseUsage(from: line)
-                }
-                if model == nil {
-                    self.consumeTurnContext(in: line, model: &model)
-                }
-                if latestUsage != nil, model != nil {
-                    break
-                }
-            }
-        }
-
-        guard let startedAt = sessionDate,
-              let resolvedModel = model,
-              let usage = latestUsage else { return nil }
-
-        return SessionRecord(
-            id: sessionID ?? fileURL.deletingPathExtension().lastPathComponent,
-            startedAt: startedAt,
-            lastActivityAt: fingerprint.modificationDate,
-            isArchived: self.isArchivedSessionFile(fileURL),
-            model: resolvedModel,
-            usage: usage
-        )
-    }
-
-    private func parseSessionSlow(_ fileURL: URL, fingerprint: FileFingerprint) -> SessionRecord? {
-        var sessionID: String?
-        var sessionDate: Date?
-        var model: String?
-        var latestUsage: Usage?
+        var previousTotalUsage: Usage?
+        var usageEvents: [UsageEvent] = []
 
         let didRead = self.enumerateLines(in: fileURL) { line in
             self.consumeSessionMetadata(in: line, sessionID: &sessionID, sessionDate: &sessionDate)
             self.consumeTurnContext(in: line, model: &model)
-            if let usage = self.parseUsage(from: line) {
-                latestUsage = usage
+            if let sample = self.parseUsageSample(from: line) {
+                latestUsage = sample.totalUsage
+
+                let incrementalUsage = sample.incrementalUsage
+                    ?? previousTotalUsage.map { sample.totalUsage.delta(from: $0) }
+                    ?? sample.totalUsage
+                previousTotalUsage = sample.totalUsage
+
+                let eventTimestamp = sample.timestamp ?? sessionDate ?? fingerprint.modificationDate
+                if incrementalUsage.isZero == false {
+                    usageEvents.append(
+                        UsageEvent(timestamp: eventTimestamp, usage: incrementalUsage)
+                    )
+                }
             }
         }
 
-        guard didRead,
-              let startedAt = sessionDate,
-              let resolvedModel = model,
-              let usage = latestUsage else { return nil }
+        let record: SessionRecord?
+        if didRead,
+           let startedAt = sessionDate,
+           let resolvedModel = model,
+           let usage = latestUsage {
+            record = SessionRecord(
+                id: sessionID ?? fileURL.deletingPathExtension().lastPathComponent,
+                startedAt: startedAt,
+                lastActivityAt: fingerprint.modificationDate,
+                isArchived: self.isArchivedSessionFile(fileURL),
+                model: resolvedModel,
+                usage: usage
+            )
+        } else {
+            record = nil
+        }
 
-        return SessionRecord(
-            id: sessionID ?? fileURL.deletingPathExtension().lastPathComponent,
-            startedAt: startedAt,
-            lastActivityAt: fingerprint.modificationDate,
-            isArchived: self.isArchivedSessionFile(fileURL),
-            model: resolvedModel,
-            usage: usage
+        return CachedSessionRecord(
+            fingerprint: fingerprint,
+            record: record,
+            usageEvents: usageEvents
         )
     }
 
@@ -270,32 +298,43 @@ final class SessionLogStore {
         }
     }
 
-    private func parseUsage(from line: String) -> Usage? {
+    private func parseUsageSample(from line: String) -> UsageSample? {
         guard line.contains("\"type\":\"event_msg\""),
               line.contains("\"token_count\""),
               line.contains("\"total_token_usage\"") else { return nil }
 
-        if let totalUsage = self.objectSlice(named: "total_token_usage", in: line),
-           let inputTokens = self.extractInt("input_tokens", in: totalUsage),
-           let cachedInputTokens = self.extractInt("cached_input_tokens", in: totalUsage),
-           let outputTokens = self.extractInt("output_tokens", in: totalUsage) {
-            return Usage(
-                inputTokens: inputTokens,
-                cachedInputTokens: cachedInputTokens,
-                outputTokens: outputTokens
+        guard let jsonData = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let payload = object["payload"] as? [String: Any] else { return nil }
+
+        let timestamp = (object["timestamp"] as? String).flatMap(ISO8601Parsing.parse(_:))
+
+        if let payloadType = payload["type"] as? String, payloadType == "event_msg",
+           let total = payload["total_token_usage"] as? [String: Any] {
+            return UsageSample(
+                timestamp: timestamp,
+                totalUsage: self.parseUsageDictionary(total),
+                incrementalUsage: (payload["last_token_usage"] as? [String: Any]).map(self.parseUsageDictionary)
             )
         }
 
-        guard let payload = self.parsePayload(from: line),
-              let payloadType = payload["type"] as? String,
+        guard let payloadType = payload["type"] as? String,
               payloadType == "token_count",
               let info = payload["info"] as? [String: Any],
               let total = info["total_token_usage"] as? [String: Any] else { return nil }
 
-        return Usage(
-            inputTokens: total["input_tokens"] as? Int ?? 0,
-            cachedInputTokens: total["cached_input_tokens"] as? Int ?? 0,
-            outputTokens: total["output_tokens"] as? Int ?? 0
+        return UsageSample(
+            timestamp: timestamp,
+            totalUsage: self.parseUsageDictionary(total),
+            incrementalUsage: (info["last_token_usage"] as? [String: Any]).map(self.parseUsageDictionary)
+        )
+    }
+
+    private func parseUsageDictionary(_ object: [String: Any]) -> Usage {
+        Usage(
+            inputTokens: object["input_tokens"] as? Int ?? 0,
+            cachedInputTokens: object["cached_input_tokens"] as? Int ?? 0,
+            outputTokens: object["output_tokens"] as? Int ?? 0
         )
     }
 
@@ -360,45 +399,6 @@ final class SessionLogStore {
         } catch {
             return false
         }
-    }
-
-    private func readLines(in fileURL: URL, maxBytes: Int, fromEnd: Bool) -> [String]? {
-        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
-        defer { try? handle.close() }
-
-        do {
-            let data: Data
-            let shouldDropFirstPartialLine: Bool
-
-            if fromEnd {
-                let fileSize = try handle.seekToEnd()
-                let readSize = min(UInt64(maxBytes), fileSize)
-                let startOffset = fileSize > readSize ? fileSize - readSize : 0
-                try handle.seek(toOffset: startOffset)
-                data = try handle.read(upToCount: Int(readSize)) ?? Data()
-                shouldDropFirstPartialLine = startOffset > 0
-            } else {
-                try handle.seek(toOffset: 0)
-                data = try handle.read(upToCount: maxBytes) ?? Data()
-                shouldDropFirstPartialLine = false
-            }
-
-            return self.lines(from: data, dropFirstPartialLine: shouldDropFirstPartialLine)
-        } catch {
-            return nil
-        }
-    }
-
-    private func lines(from data: Data, dropFirstPartialLine: Bool) -> [String] {
-        guard data.isEmpty == false else { return [] }
-
-        let newline = UInt8(ascii: "\n")
-        var parts = data.split(separator: newline, omittingEmptySubsequences: false)
-        if dropFirstPartialLine, parts.isEmpty == false {
-            parts.removeFirst()
-        }
-
-        return parts.compactMap { self.normalizedLine(from: $0) }
     }
 
     private func emitLine(from bytes: Data.SubSequence, handleLine: (String) -> Void) {

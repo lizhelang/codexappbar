@@ -42,6 +42,14 @@ final class CodexDesktopLaunchProbeServiceTests: CodexBarTestCase {
             capturedEnvironment["CODEXBAR_DESKTOP_PROBE_HITS_DIR"],
             CodexPaths.managedLaunchHitsURL.path
         )
+        XCTAssertEqual(
+            capturedEnvironment["NO_PROXY"],
+            "localhost,127.0.0.1,::1"
+        )
+        XCTAssertEqual(
+            capturedEnvironment["no_proxy"],
+            "localhost,127.0.0.1,::1"
+        )
 
         let wrapperURL = CodexPaths.managedLaunchBinURL.appendingPathComponent("codex")
         let script = try String(contentsOf: wrapperURL, encoding: .utf8)
@@ -191,6 +199,35 @@ final class CodexDesktopLaunchProbeServiceTests: CodexBarTestCase {
         XCTAssertEqual(capturedEnvironment["PATH"], "/usr/bin:/bin")
         XCTAssertNil(capturedEnvironment["CODEXBAR_DESKTOP_PROBE_RUN_ID"])
         XCTAssertNil(capturedEnvironment["CODEXBAR_DESKTOP_PROBE_HITS_DIR"])
+        XCTAssertEqual(capturedEnvironment["NO_PROXY"], "localhost,127.0.0.1,::1")
+        XCTAssertEqual(capturedEnvironment["no_proxy"], "localhost,127.0.0.1,::1")
+    }
+
+    func testLaunchNewInstancePreservesExistingNoProxyEntries() async throws {
+        let codexAppURL = try self.makeFakeCodexApp()
+        var capturedEnvironment: [String: String] = [:]
+
+        let service = CodexDesktopLaunchProbeService(
+            locateCodexApp: {
+                CodexDesktopResolvedAppLocation(
+                    url: codexAppURL,
+                    source: .bundleIdentifierLookup
+                )
+            },
+            launchApp: { _, environment in
+                capturedEnvironment = environment
+                return nil
+            },
+            environment: [
+                "NO_PROXY": "example.com,localhost",
+                "no_proxy": "127.0.0.1",
+            ]
+        )
+
+        _ = try await service.launchNewInstance()
+
+        XCTAssertEqual(capturedEnvironment["NO_PROXY"], "example.com,localhost,127.0.0.1,::1")
+        XCTAssertEqual(capturedEnvironment["no_proxy"], "127.0.0.1,localhost,::1")
     }
 
     private func makeFakeCodexApp(

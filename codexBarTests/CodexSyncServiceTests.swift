@@ -86,7 +86,7 @@ final class CodexSyncServiceTests: CodexBarTestCase {
 
         XCTAssertTrue(authText.contains(#""OPENAI_API_KEY" : "codexbar-local-gateway""#))
         XCTAssertFalse(authText.contains("access-pool"))
-        XCTAssertTrue(tomlText.contains(#"openai_base_url = "http://127.0.0.1:1456/v1""#))
+        XCTAssertTrue(tomlText.contains(#"openai_base_url = "http://localhost:1456/v1""#))
     }
 
     private enum SyncFailure: Error, Equatable {

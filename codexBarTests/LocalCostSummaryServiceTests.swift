@@ -108,6 +108,49 @@ final class LocalCostSummaryServiceTests: CodexBarTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: cacheURL.path))
     }
 
+    func testLoadAttributesCrossDaySessionUsageToEventDay() throws {
+        let home = try self.makeCodexHome()
+        let codexRoot = home.appendingPathComponent(".codex", isDirectory: true)
+        let store = SessionLogStore(
+            codexRootURL: codexRoot,
+            persistedCacheURL: home.appendingPathComponent(".codexbar/test-cost-session-cache.json")
+        )
+        let service = LocalCostSummaryService(
+            sessionLogStore: store,
+            calendar: self.utcCalendar()
+        )
+
+        try self.writeSession(
+            directory: codexRoot.appendingPathComponent("sessions", isDirectory: true),
+            fileName: "cross-day.jsonl",
+            lines: [
+                #"{"payload":{"type":"session_meta","id":"cross-day","timestamp":"2026-04-04T23:50:00Z"}}"#,
+                #"{"payload":{"type":"turn_context","model":"gpt-5.4"}}"#,
+                #"{"timestamp":"2026-04-04T23:55:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":20},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":20}}}}"#,
+                #"{"timestamp":"2026-04-05T01:10:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":170,"cached_input_tokens":30,"output_tokens":30},"last_token_usage":{"input_tokens":70,"cached_input_tokens":10,"output_tokens":10}}}}"#,
+            ]
+        )
+
+        let summary = service.load(now: self.date("2026-04-05T12:00:00Z"))
+
+        XCTAssertEqual(summary.todayTokens, 80)
+        XCTAssertEqual(summary.last30DaysTokens, 200)
+        XCTAssertEqual(summary.lifetimeTokens, 200)
+        XCTAssertEqual(summary.dailyEntries.count, 2)
+
+        XCTAssertEqual(summary.dailyEntries[0].date, self.date("2026-04-05T00:00:00Z"))
+        XCTAssertEqual(summary.dailyEntries[0].totalTokens, 80)
+        XCTAssertEqual(summary.dailyEntries[0].costUSD, 0.0003025, accuracy: 1e-12)
+
+        XCTAssertEqual(summary.dailyEntries[1].date, self.date("2026-04-04T00:00:00Z"))
+        XCTAssertEqual(summary.dailyEntries[1].totalTokens, 120)
+        XCTAssertEqual(summary.dailyEntries[1].costUSD, 0.000505, accuracy: 1e-12)
+
+        XCTAssertEqual(summary.todayCostUSD, 0.0003025, accuracy: 1e-12)
+        XCTAssertEqual(summary.last30DaysCostUSD, 0.0008075, accuracy: 1e-12)
+        XCTAssertEqual(summary.lifetimeCostUSD, 0.0008075, accuracy: 1e-12)
+    }
+
     private func makeCodexHome() throws -> URL {
         let home = try XCTUnwrap(self.temporaryHomeURL())
         try FileManager.default.createDirectory(
@@ -179,6 +222,19 @@ final class LocalCostSummaryServiceTests: CodexBarTestCase {
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try content.write(
+            to: directory.appendingPathComponent(fileName),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    private func writeSession(
+        directory: URL,
+        fileName: String,
+        lines: [String]
+    ) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try (lines.joined(separator: "\n") + "\n").write(
             to: directory.appendingPathComponent(fileName),
             atomically: true,
             encoding: .utf8

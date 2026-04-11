@@ -13,7 +13,7 @@ protocol OpenAIAccountGatewayControlling: AnyObject {
 }
 
 enum OpenAIAccountGatewayConfiguration {
-    static let host = "127.0.0.1"
+    static let host = "localhost"
     static let port: UInt16 = 1456
     static let apiKey = "codexbar-local-gateway"
     static let upstreamResponsesURL = URL(string: "https://api.openai.com/v1/responses")!

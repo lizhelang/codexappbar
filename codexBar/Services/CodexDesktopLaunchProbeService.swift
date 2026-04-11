@@ -90,6 +90,7 @@ enum CodexDesktopLaunchProbeError: LocalizedError {
 @MainActor
 final class CodexDesktopLaunchProbeService {
     static let shared = CodexDesktopLaunchProbeService()
+    private static let localProxyBypassHosts = ["localhost", "127.0.0.1", "::1"]
 
     typealias PreferredAppPathProvider = @MainActor () -> String?
     typealias AppLocator = @MainActor () -> CodexDesktopResolvedAppLocation?
@@ -178,6 +179,7 @@ final class CodexDesktopLaunchProbeService {
         launchEnvironment["PATH"] = prefixedPATH
         launchEnvironment["CODEXBAR_DESKTOP_PROBE_RUN_ID"] = runID
         launchEnvironment["CODEXBAR_DESKTOP_PROBE_HITS_DIR"] = CodexPaths.managedLaunchHitsURL.path
+        launchEnvironment = Self.appendingLocalProxyBypass(to: launchEnvironment)
 
         _ = try await self.launchApp(appURL, launchEnvironment)
         return state
@@ -191,6 +193,7 @@ final class CodexDesktopLaunchProbeService {
         var launchEnvironment = self.environment
         launchEnvironment.removeValue(forKey: "CODEXBAR_DESKTOP_PROBE_RUN_ID")
         launchEnvironment.removeValue(forKey: "CODEXBAR_DESKTOP_PROBE_HITS_DIR")
+        launchEnvironment = Self.appendingLocalProxyBypass(to: launchEnvironment)
 
         return try await self.launchApp(appURL, launchEnvironment)
     }
@@ -375,5 +378,33 @@ final class CodexDesktopLaunchProbeService {
 
     private func shellSingleQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+
+    private static func appendingLocalProxyBypass(
+        to environment: [String: String]
+    ) -> [String: String] {
+        var updated = environment
+        for key in ["NO_PROXY", "no_proxy"] {
+            updated[key] = self.mergedNoProxyValue(existing: updated[key])
+        }
+        return updated
+    }
+
+    private static func mergedNoProxyValue(existing: String?) -> String {
+        let existingEntries = (existing ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+
+        if existingEntries.contains("*") {
+            return existingEntries.joined(separator: ",")
+        }
+
+        var merged = existingEntries
+        let normalized = Set(existingEntries.map { $0.lowercased() })
+        for host in self.localProxyBypassHosts where normalized.contains(host.lowercased()) == false {
+            merged.append(host)
+        }
+        return merged.joined(separator: ",")
     }
 }

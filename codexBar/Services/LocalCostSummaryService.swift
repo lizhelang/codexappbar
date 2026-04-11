@@ -50,17 +50,17 @@ struct LocalCostSummaryService {
         let todayStart = self.calendar.startOfDay(for: now)
         let last30Start = self.calendar.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
 
-        let summary = self.sessionLogStore.reduceSessions(into: SummaryAccumulator()) { accumulator, record in
-            guard let cost = self.costUSD(model: record.model, usage: record.usage) else { return }
+        let summary = self.sessionLogStore.reduceUsageEvents(into: SummaryAccumulator()) { accumulator, record, event in
+            guard let cost = self.costUSD(model: record.model, usage: event.usage) else { return }
 
-            let totalTokens = record.usage.inputTokens + record.usage.outputTokens
-            let day = self.calendar.startOfDay(for: record.startedAt)
+            let totalTokens = event.usage.totalTokens
+            let day = self.calendar.startOfDay(for: event.timestamp)
 
-            if record.startedAt >= last30Start {
+            if event.timestamp >= last30Start {
                 accumulator.last30 += cost
                 accumulator.last30Tokens += totalTokens
             }
-            if record.startedAt >= todayStart {
+            if event.timestamp >= todayStart {
                 accumulator.today += cost
                 accumulator.todayTokens += totalTokens
             }

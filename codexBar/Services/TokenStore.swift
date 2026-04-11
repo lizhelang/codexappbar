@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 
@@ -52,14 +53,27 @@ final class TokenStore: ObservableObject {
     private let switchJournalStore = SwitchJournalStore()
     private let costSummaryService = LocalCostSummaryService()
     private let openAIAccountGatewayService: OpenAIAccountGatewayControlling
+    private let aggregateGatewayLeaseStore: OpenAIAggregateGatewayLeaseStoring
+    private let codexRunningProcessIDs: () -> Set<pid_t>
     private let refreshStateQueue = DispatchQueue(label: "lzl.codexbar.refresh-state")
     private let usageRefreshStateQueue = DispatchQueue(label: "lzl.codexbar.usage-refresh-state")
     private var isRefreshingLocalCostSummary = false
     private var isRefreshingAllUsage = false
     private var refreshingUsageAccountIDs: Set<String> = []
+    private var aggregateGatewayLeaseProcessIDs: Set<pid_t>
+    private var aggregateGatewayLeaseTimer: Timer?
 
-    init(openAIAccountGatewayService: OpenAIAccountGatewayControlling = OpenAIAccountGatewayService.shared) {
+    init(
+        openAIAccountGatewayService: OpenAIAccountGatewayControlling = OpenAIAccountGatewayService.shared,
+        aggregateGatewayLeaseStore: OpenAIAggregateGatewayLeaseStoring = OpenAIAggregateGatewayLeaseStore(),
+        codexRunningProcessIDs: @escaping () -> Set<pid_t> = {
+            Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").map(\.processIdentifier))
+        }
+    ) {
         self.openAIAccountGatewayService = openAIAccountGatewayService
+        self.aggregateGatewayLeaseStore = aggregateGatewayLeaseStore
+        self.codexRunningProcessIDs = codexRunningProcessIDs
+        self.aggregateGatewayLeaseProcessIDs = aggregateGatewayLeaseStore.loadProcessIDs()
 
         if let loaded = try? self.configStore.loadOrMigrate() {
             self.config = loaded
@@ -282,6 +296,10 @@ final class TokenStore: ObservableObject {
     func updateOpenAIAccountUsageMode(_ mode: CodexBarOpenAIAccountUsageMode) throws {
         guard self.config.openAI.accountUsageMode != mode else { return }
 
+        self.captureAggregateGatewayLeasesIfNeeded(
+            previousMode: self.config.openAI.accountUsageMode,
+            newMode: mode
+        )
         self.config.setOpenAIAccountUsageMode(mode)
         if mode == .aggregateGateway,
            let provider = self.oauthProvider() {
@@ -411,21 +429,107 @@ final class TokenStore: ObservableObject {
     }
 
     private func publishState() {
+        _ = self.refreshAggregateGatewayLeaseState()
+        self.pushPublishedState()
+    }
+
+    private func pushPublishedState() {
         self.accounts = self.config.oauthTokenAccounts()
-        self.reconcileOpenAIAccountGatewayLifecycle()
+        let effectiveGatewayMode = self.effectiveGatewayMode
+        self.reconcileOpenAIAccountGatewayLifecycle(effectiveMode: effectiveGatewayMode)
         self.openAIAccountGatewayService.updateState(
             accounts: self.accounts,
             quotaSortSettings: self.config.openAI.quotaSort,
-            accountUsageMode: self.config.openAI.accountUsageMode
+            accountUsageMode: effectiveGatewayMode
         )
     }
 
-    private func reconcileOpenAIAccountGatewayLifecycle() {
-        if self.config.openAI.accountUsageMode == .aggregateGateway {
+    private var effectiveGatewayMode: CodexBarOpenAIAccountUsageMode {
+        if self.config.openAI.accountUsageMode == .aggregateGateway ||
+            self.aggregateGatewayLeaseProcessIDs.isEmpty == false {
+            return .aggregateGateway
+        }
+        return .switchAccount
+    }
+
+    private func reconcileOpenAIAccountGatewayLifecycle(
+        effectiveMode: CodexBarOpenAIAccountUsageMode
+    ) {
+        if effectiveMode == .aggregateGateway {
             self.openAIAccountGatewayService.startIfNeeded()
         } else {
             self.openAIAccountGatewayService.stop()
         }
+    }
+
+    private func captureAggregateGatewayLeasesIfNeeded(
+        previousMode: CodexBarOpenAIAccountUsageMode,
+        newMode: CodexBarOpenAIAccountUsageMode
+    ) {
+        if previousMode == .aggregateGateway, newMode != .aggregateGateway {
+            self.aggregateGatewayLeaseProcessIDs = self.codexRunningProcessIDs()
+            self.persistAggregateGatewayLeaseState()
+            self.configureAggregateGatewayLeaseTimer()
+            return
+        }
+
+        if newMode == .aggregateGateway, self.aggregateGatewayLeaseProcessIDs.isEmpty == false {
+            self.aggregateGatewayLeaseProcessIDs.removeAll()
+            self.persistAggregateGatewayLeaseState()
+            self.configureAggregateGatewayLeaseTimer()
+        }
+    }
+
+    private func refreshAggregateGatewayLeaseState() -> Bool {
+        if self.config.openAI.accountUsageMode == .aggregateGateway {
+            let changed = self.aggregateGatewayLeaseProcessIDs.isEmpty == false
+            if changed {
+                self.aggregateGatewayLeaseProcessIDs.removeAll()
+                self.persistAggregateGatewayLeaseState()
+            }
+            self.configureAggregateGatewayLeaseTimer()
+            return changed
+        }
+
+        let runningProcessIDs = self.codexRunningProcessIDs()
+        let prunedProcessIDs = self.aggregateGatewayLeaseProcessIDs.intersection(runningProcessIDs)
+        let changed = prunedProcessIDs != self.aggregateGatewayLeaseProcessIDs
+        if changed {
+            self.aggregateGatewayLeaseProcessIDs = prunedProcessIDs
+            self.persistAggregateGatewayLeaseState()
+        }
+        self.configureAggregateGatewayLeaseTimer()
+        return changed
+    }
+
+    private func persistAggregateGatewayLeaseState() {
+        if self.aggregateGatewayLeaseProcessIDs.isEmpty {
+            self.aggregateGatewayLeaseStore.clear()
+        } else {
+            self.aggregateGatewayLeaseStore.saveProcessIDs(self.aggregateGatewayLeaseProcessIDs)
+        }
+    }
+
+    private func configureAggregateGatewayLeaseTimer() {
+        let shouldPoll = self.config.openAI.accountUsageMode != .aggregateGateway &&
+            self.aggregateGatewayLeaseProcessIDs.isEmpty == false
+
+        if shouldPoll {
+            if self.aggregateGatewayLeaseTimer == nil {
+                let timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                    guard let self else { return }
+                    if self.refreshAggregateGatewayLeaseState() {
+                        self.pushPublishedState()
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                self.aggregateGatewayLeaseTimer = timer
+            }
+            return
+        }
+
+        self.aggregateGatewayLeaseTimer?.invalidate()
+        self.aggregateGatewayLeaseTimer = nil
     }
 
     func refreshLocalCostSummary() {
@@ -494,6 +598,10 @@ final class TokenStore: ObservableObject {
 
         guard let data = try? encoder.encode(summary) else { return }
         try? CodexPaths.writeSecureFile(data, to: CodexPaths.costCacheURL)
+    }
+
+    deinit {
+        self.aggregateGatewayLeaseTimer?.invalidate()
     }
 
     private func slug(from label: String) -> String {
