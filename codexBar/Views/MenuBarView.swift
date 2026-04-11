@@ -650,20 +650,27 @@ struct MenuBarView: View {
 
                 Spacer()
 
-                HStack(spacing: 4) {
-                    ForEach(CodexBarOpenAIAccountUsageMode.allCases) { mode in
-                        Button(mode == .aggregateGateway ? L.accountUsageModeAggregateShort : L.accountUsageModeSwitchShort) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { self.store.config.openAI.accountUsageMode },
+                        set: { mode in
                             Task {
                                 await self.setOpenAIAccountUsageMode(mode)
                             }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.mini)
-                        .font(.system(size: 10, weight: .medium))
-                        .tint(self.store.config.openAI.accountUsageMode == mode ? .accentColor : .gray.opacity(0.35))
-                        .accessibilityIdentifier("codexbar.openai-mode.\(mode.rawValue)")
+                    )
+                ) {
+                    ForEach(CodexBarOpenAIAccountUsageMode.allCases) { mode in
+                        Text(mode.menuToggleTitle)
+                            .tag(mode)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .frame(width: 158)
+                .accessibilityIdentifier("codexbar.openai-mode-picker")
                 .padding(.trailing, 12)
             }
 

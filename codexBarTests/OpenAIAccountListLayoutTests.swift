@@ -142,6 +142,31 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
         XCTAssertEqual(grouped.map(\.email), ["plus@example.com", "free@example.com"])
     }
 
+    func testMixedPlanWeightedQuotaPrefersEarlierResetBeforePlanWeightFallback() {
+        let free = makeAccount(
+            email: "free@example.com",
+            accountId: "acct_free",
+            planType: "free",
+            primaryUsedPercent: 0,
+            secondaryUsedPercent: 0,
+            primaryResetAt: Date(timeIntervalSinceNow: 60 * 60),
+            secondaryResetAt: Date(timeIntervalSinceNow: 6 * 24 * 60 * 60)
+        )
+        let plus = makeAccount(
+            email: "plus@example.com",
+            accountId: "acct_plus",
+            planType: "plus",
+            primaryUsedPercent: 90,
+            secondaryUsedPercent: 90,
+            primaryResetAt: Date(timeIntervalSinceNow: 2 * 60 * 60),
+            secondaryResetAt: Date(timeIntervalSinceNow: 7 * 24 * 60 * 60)
+        )
+
+        let grouped = OpenAIAccountListLayout.groupedAccounts(from: [plus, free])
+
+        XCTAssertEqual(grouped.map(\.email), ["free@example.com", "plus@example.com"])
+    }
+
     func testMixedPlanWeightedQuotaGivesTeamOnePointFivePlusValue() {
         let plus = makeAccount(
             email: "plus@example.com",
@@ -504,6 +529,8 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
         planType: String = "free",
         primaryUsedPercent: Double,
         secondaryUsedPercent: Double,
+        primaryResetAt: Date? = nil,
+        secondaryResetAt: Date? = nil,
         isActive: Bool = false,
         isSuspended: Bool = false,
         tokenExpired: Bool = false
@@ -514,6 +541,8 @@ final class OpenAIAccountListLayoutTests: XCTestCase {
             planType: planType,
             primaryUsedPercent: primaryUsedPercent,
             secondaryUsedPercent: secondaryUsedPercent,
+            primaryResetAt: primaryResetAt,
+            secondaryResetAt: secondaryResetAt,
             isActive: isActive,
             isSuspended: isSuspended,
             tokenExpired: tokenExpired

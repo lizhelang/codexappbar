@@ -161,6 +161,8 @@ enum OpenAIAccountListLayout {
         _ rhs: TokenAccount,
         quotaSortSettings: CodexBarOpenAISettings.QuotaSortSettings = .init()
     ) -> Bool {
+        let now = Date()
+
         if lhs.sortBucket != rhs.sortBucket {
             return lhs.sortBucket.rawValue < rhs.sortBucket.rawValue
         }
@@ -175,6 +177,10 @@ enum OpenAIAccountListLayout {
         let rhsWeightedSecondary = rhs.weightedSecondaryRemainingPercent(using: quotaSortSettings)
         if lhsWeightedSecondary != rhsWeightedSecondary {
             return lhsWeightedSecondary > rhsWeightedSecondary
+        }
+
+        if let earlierResetPrecedes = self.earlierResetPrecedes(lhs, rhs, now: now) {
+            return earlierResetPrecedes
         }
 
         let lhsPlanMultiplier = lhs.planQuotaMultiplier(using: quotaSortSettings)
@@ -198,6 +204,20 @@ enum OpenAIAccountListLayout {
         }
 
         return lhs.accountId < rhs.accountId
+    }
+
+    nonisolated private static func earlierResetPrecedes(
+        _ lhs: TokenAccount,
+        _ rhs: TokenAccount,
+        now: Date
+    ) -> Bool? {
+        guard let lhsResetAt = lhs.nearestResetAt(now: now),
+              let rhsResetAt = rhs.nearestResetAt(now: now),
+              lhsResetAt != rhsResetAt else {
+            return nil
+        }
+
+        return lhsResetAt < rhsResetAt
     }
 
     nonisolated private static func displayAccountPrecedes(

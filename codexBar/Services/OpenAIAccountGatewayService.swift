@@ -26,6 +26,7 @@ enum OpenAIAccountGatewayConfiguration {
     static let originator = "codexbar"
     static let reasoningIncludeMarker = "reasoning.encrypted_content"
     static let upstreamResponsesURL = URL(string: "https://chatgpt.com/backend-api/codex/responses")!
+    static let upstreamResponsesCompactURL = URL(string: "https://chatgpt.com/backend-api/codex/responses/compact")!
 
     static var baseURLString: String {
         "http://\(self.host):\(self.port)/v1"
@@ -36,11 +37,13 @@ struct OpenAIAccountGatewayRuntimeConfiguration {
     var host: String
     var port: UInt16
     var upstreamResponsesURL: URL
+    var upstreamResponsesCompactURL: URL
 
     static let live = OpenAIAccountGatewayRuntimeConfiguration(
         host: OpenAIAccountGatewayConfiguration.host,
         port: OpenAIAccountGatewayConfiguration.port,
-        upstreamResponsesURL: OpenAIAccountGatewayConfiguration.upstreamResponsesURL
+        upstreamResponsesURL: OpenAIAccountGatewayConfiguration.upstreamResponsesURL,
+        upstreamResponsesCompactURL: OpenAIAccountGatewayConfiguration.upstreamResponsesCompactURL
     )
 }
 
@@ -72,6 +75,31 @@ private struct ParsedWebSocketFrame {
 private struct WebSocketFragmentState {
     var opcode: UInt8?
     var payload = Data()
+}
+
+private enum OpenAIAccountGatewayResponsesRoute {
+    case responses
+    case compact
+
+    init?(requestPath: String) {
+        switch requestPath {
+        case "/v1/responses":
+            self = .responses
+        case "/v1/responses/compact":
+            self = .compact
+        default:
+            return nil
+        }
+    }
+
+    func upstreamURL(using configuration: OpenAIAccountGatewayRuntimeConfiguration) -> URL {
+        switch self {
+        case .responses:
+            return configuration.upstreamResponsesURL
+        case .compact:
+            return configuration.upstreamResponsesCompactURL
+        }
+    }
 }
 
 final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
@@ -227,7 +255,11 @@ final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
             }
         case ("POST", "/v1/responses"):
             Task {
-                await self.forwardResponsesRequest(request, on: connection)
+                await self.forwardResponsesRequest(request, on: connection, route: .responses)
+            }
+        case ("POST", "/v1/responses/compact"):
+            Task {
+                await self.forwardResponsesRequest(request, on: connection, route: .compact)
             }
         default:
             self.sendJSONResponse(
@@ -381,7 +413,11 @@ final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
         }
     }
 
-    private func forwardResponsesRequest(_ request: ParsedGatewayRequest, on connection: NWConnection) async {
+    private func forwardResponsesRequest(
+        _ request: ParsedGatewayRequest,
+        on connection: NWConnection,
+        route: OpenAIAccountGatewayResponsesRoute
+    ) async {
         let snapshot = self.snapshot()
         let stickyKey = self.stickySessionKey(for: request.headers)
         let candidates = self.candidates(for: snapshot, stickyKey: stickyKey)
@@ -397,7 +433,7 @@ final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
 
         for (index, account) in candidates.enumerated() {
             do {
-                let result = try await self.proxyPOSTResponses(request, account: account)
+                let result = try await self.proxyPOSTResponses(request, account: account, route: route)
                 if self.shouldRetry(statusCode: result.response.statusCode),
                    index < candidates.count - 1 {
                     self.clearBinding(stickyKey: stickyKey, accountID: account.accountId)
@@ -421,10 +457,11 @@ final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
 
     private func proxyPOSTResponses(
         _ request: ParsedGatewayRequest,
-        account: TokenAccount
+        account: TokenAccount,
+        route: OpenAIAccountGatewayResponsesRoute
     ) async throws -> (response: HTTPURLResponse, bytes: URLSession.AsyncBytes) {
-        let normalizedBody = self.normalizeResponsesRequestBody(request.body)
-        var upstreamRequest = URLRequest(url: self.runtimeConfiguration.upstreamResponsesURL)
+        let normalizedBody = self.normalizeRequestBody(request.body, route: route)
+        var upstreamRequest = URLRequest(url: route.upstreamURL(using: self.runtimeConfiguration))
         upstreamRequest.httpMethod = "POST"
         upstreamRequest.httpBody = normalizedBody
         let mutableRequest = (upstreamRequest as NSURLRequest).mutableCopy() as! NSMutableURLRequest
@@ -454,6 +491,15 @@ final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
         }
 
         return (httpResponse, bytes)
+    }
+
+    private func normalizeRequestBody(_ body: Data, route: OpenAIAccountGatewayResponsesRoute) -> Data {
+        switch route {
+        case .responses:
+            return self.normalizeResponsesRequestBody(body)
+        case .compact:
+            return self.normalizeCompactRequestBody(body)
+        }
     }
 
     private func makeUpstreamWebSocketTask(
@@ -525,6 +571,31 @@ final class OpenAIAccountGatewayService: OpenAIAccountGatewayControlling {
             includes.append(OpenAIAccountGatewayConfiguration.reasoningIncludeMarker)
         }
         json["include"] = includes
+
+        guard JSONSerialization.isValidJSONObject(json),
+              let data = try? JSONSerialization.data(withJSONObject: json) else {
+            return body
+        }
+        return data
+    }
+
+    private func normalizeCompactRequestBody(_ body: Data) -> Data {
+        guard var json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+            return body
+        }
+
+        json.removeValue(forKey: "store")
+        json.removeValue(forKey: "stream")
+        json.removeValue(forKey: "include")
+        json.removeValue(forKey: "tools")
+        json.removeValue(forKey: "parallel_tool_calls")
+        json.removeValue(forKey: "max_output_tokens")
+        json.removeValue(forKey: "temperature")
+        json.removeValue(forKey: "top_p")
+
+        if json["instructions"] == nil || json["instructions"] is NSNull {
+            json["instructions"] = ""
+        }
 
         guard JSONSerialization.isValidJSONObject(json),
               let data = try? JSONSerialization.data(withJSONObject: json) else {
@@ -1061,6 +1132,14 @@ extension OpenAIAccountGatewayService {
     private func bufferedResponsesRequestForTesting(
         _ request: ParsedGatewayRequest
     ) async throws -> OpenAIAccountGatewayTestResponse {
+        guard let route = OpenAIAccountGatewayResponsesRoute(requestPath: request.path) else {
+            return OpenAIAccountGatewayTestResponse(
+                statusCode: 404,
+                headers: ["Content-Type": "application/json"],
+                body: Data(#"{"error":{"message":"not found"}}"#.utf8)
+            )
+        }
+
         let snapshot = self.snapshot()
         let stickyKey = self.stickySessionKey(for: request.headers)
         let candidates = self.candidates(for: snapshot, stickyKey: stickyKey)
@@ -1075,7 +1154,7 @@ extension OpenAIAccountGatewayService {
 
         for (index, account) in candidates.enumerated() {
             do {
-                let result = try await self.proxyPOSTResponses(request, account: account)
+                let result = try await self.proxyPOSTResponses(request, account: account, route: route)
                 if self.shouldRetry(statusCode: result.response.statusCode),
                    index < candidates.count - 1 {
                     self.clearBinding(stickyKey: stickyKey, accountID: account.accountId)

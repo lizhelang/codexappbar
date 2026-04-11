@@ -107,13 +107,6 @@ struct CodexSyncService: CodexSynchronizing {
         let object: [String: Any]
         switch provider.kind {
         case .openAIOAuth:
-            if config.openAI.accountUsageMode == .aggregateGateway {
-                object = [
-                    "OPENAI_API_KEY": OpenAIAccountGatewayConfiguration.apiKey,
-                ]
-                break
-            }
-
             guard let accessToken = account.accessToken,
                   let refreshToken = account.refreshToken,
                   let idToken = account.idToken,
@@ -159,7 +152,10 @@ struct CodexSyncService: CodexSynchronizing {
         text = self.upsertSetting(text, key: "review_model", value: self.quote(global.reviewModel))
         text = self.upsertSetting(text, key: "model_reasoning_effort", value: self.quote(global.reasoningEffort))
 
-        text = self.removeSetting(text, key: "service_tier")
+        // Preserve native OpenAI speed tiers so Codex fast/flex modes survive account sync.
+        if provider.kind != .openAIOAuth {
+            text = self.removeSetting(text, key: "service_tier")
+        }
         text = self.removeSetting(text, key: "oss_provider")
         text = self.removeSetting(text, key: "openai_base_url")
         text = self.removeSetting(text, key: "model_catalog_json")

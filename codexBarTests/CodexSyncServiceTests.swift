@@ -53,8 +53,18 @@ final class CodexSyncServiceTests: CodexBarTestCase {
         XCTAssertEqual(try Data(contentsOf: CodexPaths.configTomlURL), originalToml)
     }
 
-    func testSynchronizeUsesLocalGatewayWhenAggregateModeIsEnabled() throws {
+    func testSynchronizePreservesChatGPTAuthAndServiceTierWhenAggregateModeIsEnabled() throws {
         try CodexPaths.ensureDirectories()
+        try CodexPaths.writeSecureFile(
+            Data(
+                """
+                service_tier = "fast"
+                preferred_auth_method = "chatgpt"
+                model = "gpt-5.4-mini"
+                """.utf8
+            ),
+            to: CodexPaths.configTomlURL
+        )
 
         let account = CodexBarProviderAccount(
             id: "acct_pool",
@@ -84,9 +94,12 @@ final class CodexSyncServiceTests: CodexBarTestCase {
         let authText = try String(contentsOf: CodexPaths.authURL, encoding: .utf8)
         let tomlText = try String(contentsOf: CodexPaths.configTomlURL, encoding: .utf8)
 
-        XCTAssertTrue(authText.contains(#""OPENAI_API_KEY" : "codexbar-local-gateway""#))
-        XCTAssertFalse(authText.contains("access-pool"))
+        XCTAssertTrue(authText.contains(#""auth_mode" : "chatgpt""#))
+        XCTAssertTrue(authText.contains("access-pool"))
+        XCTAssertFalse(authText.contains("codexbar-local-gateway"))
         XCTAssertTrue(tomlText.contains(#"openai_base_url = "http://localhost:1456/v1""#))
+        XCTAssertTrue(tomlText.contains(#"service_tier = "fast""#))
+        XCTAssertFalse(tomlText.contains("preferred_auth_method"))
     }
 
     private enum SyncFailure: Error, Equatable {

@@ -91,6 +91,15 @@ enum CodexBarOpenAIAccountUsageMode: String, Codable, CaseIterable, Identifiable
     case aggregateGateway = "aggregate_gateway"
 
     var id: String { self.rawValue }
+
+    var menuToggleTitle: String {
+        switch self {
+        case .switchAccount:
+            return L.accountUsageModeSwitchShort
+        case .aggregateGateway:
+            return L.accountUsageModeAggregateShort
+        }
+    }
 }
 
 enum CodexBarOpenAIAccountOrderingMode: String, Codable, CaseIterable, Identifiable {
