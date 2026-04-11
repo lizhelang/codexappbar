@@ -634,21 +634,15 @@ struct MenuBarView: View {
     @ViewBuilder
     private var openAIAccountsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("OpenAI Accounts")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
-                    .padding(.leading, 4)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
 
-                Text(store.config.openAI.usageDisplayMode.badgeTitle)
-                    .font(.system(size: 9, weight: .medium))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.12))
-                    .foregroundColor(.secondary)
-                    .cornerRadius(4)
-
-                Spacer()
+                Spacer(minLength: 8)
 
                 Picker(
                     "",
@@ -669,10 +663,12 @@ struct MenuBarView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .controlSize(.mini)
-                .frame(width: 158)
+                .fixedSize(horizontal: true, vertical: false)
                 .accessibilityIdentifier("codexbar.openai-mode-picker")
-                .padding(.trailing, 12)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 4)
+            .padding(.trailing, 8)
 
             if store.accounts.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -700,6 +696,7 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -724,8 +721,9 @@ struct MenuBarView: View {
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 4)
-                    .padding(.trailing, 12)
+                    .padding(.trailing, 8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -805,7 +803,6 @@ struct MenuBarView: View {
                 }
             }
         }
-        .padding(.trailing, 4)
     }
 
     private func relativeTime(_ date: Date) -> String {
